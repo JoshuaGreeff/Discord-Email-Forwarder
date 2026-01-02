@@ -1,14 +1,16 @@
 import { REST } from "@discordjs/rest";
 import { Routes } from "discord-api-types/v10";
-import { Client, Collection, GatewayIntentBits, Interaction } from "discord.js";
-import { Database } from "sqlite";
+import { Client, Collection, Events, GatewayIntentBits, Interaction } from "discord.js";
+import { Database } from "../db/client";
 import * as setupCommand from "./commands/setup";
 import * as updateCommand from "./commands/update";
 import {
   handleAck,
   handleUnsubscribe,
   handleUnsubscribeModal,
+  handleShowRules,
   isAck,
+  isShowRules,
   isUnsub,
   isUnsubModal,
 } from "./interactions";
@@ -27,7 +29,7 @@ export function createClient(db: Database): Client {
   commands.set(setupCommand.data.name, { data: setupCommand.data, handle: (i, db) => setupCommand.handleSetup(i as any, db) });
   commands.set(updateCommand.data.name, { data: updateCommand.data, handle: (i, db) => updateCommand.handleUpdate(i as any, db) });
 
-  client.once("ready", async () => {
+  client.once(Events.ClientReady, async () => {
     console.log(`Logged in as ${client.user?.tag}`);
     await registerSlashCommands(commands);
   });
@@ -42,6 +44,8 @@ export function createClient(db: Database): Client {
         await handleAck(interaction, db);
       } else if (isUnsub(interaction)) {
         await handleUnsubscribe(interaction, db);
+      } else if (isShowRules(interaction)) {
+        await handleShowRules(interaction, db);
       }
     } else if (interaction.isModalSubmit()) {
       if (isUnsubModal(interaction)) {

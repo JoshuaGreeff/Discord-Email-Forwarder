@@ -1,44 +1,38 @@
 import cron from "node-cron";
 import { Client } from "discord.js";
-import { Database } from "sqlite";
-import { listChannelSettings, upsertChannelSettings } from "./db/settings";
+import { Database } from "./db/client";
+import { ChannelSettings, listChannelSettings, upsertChannelSettings } from "./db/settings";
 import { listRulesForChannel } from "./db/rules";
+import { getReceiptByEmailId } from "./db/messages";
 import { shouldSkipEmail } from "./rules/filters";
 import { fetchUnreadMessages, markMessageRead } from "./graph/mail";
-import { getGraphClient, refreshAccessToken } from "./graph/auth";
+import { getAppOnlyToken, getGraphClient } from "./graph/auth";
 import { postEmailToChannel } from "./discord/postEmail";
 
-async function processMailbox(db: Database, client: Client, opts: { guildId: string; channelId: string }) {
-  const settingsList = await listChannelSettings(db);
-  const target = settingsList.find(
-    (s) => s.guildId === opts.guildId && s.channelId === opts.channelId
-  );
-
-  if (!target) return;
-  if (!target.accessToken || !target.refreshToken) {
-    console.warn(`No tokens for ${opts.channelId}; run /setup OAuth.`);
+async function processMailbox(db: Database, client: Client, target: ChannelSettings) {
+  if (!target.clientId || !target.clientSecret || !target.tenantId) {
+    console.warn(`Missing app-only credentials for ${target.channelId}; update settings.`);
     return;
   }
 
   let accessToken = target.accessToken;
-  if (!target.expiresAt || target.expiresAt < Math.floor(Date.now() / 1000) + 60) {
+  const now = Math.floor(Date.now() / 1000);
+  if (!accessToken || !target.expiresAt || target.expiresAt < now + 60) {
     try {
-      const refreshed = await refreshAccessToken({
+      const tokens = await getAppOnlyToken({
         tenantId: target.tenantId,
         clientId: target.clientId,
         clientSecret: target.clientSecret,
-        redirectUri: target.redirectUri,
-        refreshToken: target.refreshToken,
       });
-      accessToken = refreshed.accessToken;
+      accessToken = tokens.accessToken;
       await upsertChannelSettings(db, {
         ...target,
-        accessToken: refreshed.accessToken,
-        refreshToken: refreshed.refreshToken,
-        expiresAt: refreshed.expiresAt,
+        accessToken: tokens.accessToken,
+        refreshToken: undefined,
+        expiresAt: tokens.expiresAt,
       });
     } catch (err) {
-      console.error("Failed to refresh token", err);
+      console.error(`Failed to fetch app-only token for ${target.channelId}`, err);
       return;
     }
   }
@@ -48,6 +42,12 @@ async function processMailbox(db: Database, client: Client, opts: { guildId: str
   const messages = await fetchUnreadMessages(graph, target.mailboxAddress);
 
   for (const mail of messages) {
+    const alreadyHandled = getReceiptByEmailId(db, mail.id, target.channelId, target.mailboxAddress);
+    if (alreadyHandled) {
+      await markMessageRead(graph, target.mailboxAddress, mail.id);
+      continue;
+    }
+
     if (shouldSkipEmail(rules, { from: mail.from, subject: mail.subject })) {
       await markMessageRead(graph, target.mailboxAddress, mail.id);
       continue;
@@ -58,6 +58,7 @@ async function processMailbox(db: Database, client: Client, opts: { guildId: str
       db,
       guildId: target.guildId,
       channelId: target.channelId,
+      mailboxAddress: target.mailboxAddress,
       email: mail,
     });
 
@@ -66,14 +67,26 @@ async function processMailbox(db: Database, client: Client, opts: { guildId: str
 }
 
 export function startPolling(db: Database, client: Client): void {
-  cron.schedule("*/2 * * * *", async () => {
+  cron.schedule("*/5 * * * *", async () => {
     const settings = await listChannelSettings(db);
     for (const setting of settings) {
       try {
-        await processMailbox(db, client, { guildId: setting.guildId, channelId: setting.channelId });
+        await processMailbox(db, client, setting);
       } catch (err) {
         console.error(`Error processing channel ${setting.channelId}`, err);
       }
     }
   });
+
+  // Run once on startup so we don't wait for the first cron interval.
+  (async () => {
+    const settings = await listChannelSettings(db);
+    for (const setting of settings) {
+      try {
+        await processMailbox(db, client, setting);
+      } catch (err) {
+        console.error(`Error processing channel ${setting.channelId}`, err);
+      }
+    }
+  })();
 }

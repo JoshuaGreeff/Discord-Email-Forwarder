@@ -1,69 +1,77 @@
-import { Database } from "sqlite";
+import { Database } from "./client";
 
 export interface MessageReceipt {
   messageId: string;
   guildId: string;
   channelId: string;
+  mailboxAddress: string;
   emailId: string;
   fromAddress?: string;
   subject?: string;
   acknowledgedBy?: string;
   acknowledgedAt?: number;
+  unsubRuleId?: number;
+  unsubscribedBy?: string;
+  unsubscribedAt?: number;
 }
 
 export async function saveMessageReceipt(db: Database, receipt: MessageReceipt): Promise<void> {
-  await db.run(
-    `
-      INSERT INTO message_receipts (message_id, guild_id, channel_id, email_id, from_address, subject, acknowledged_by, acknowledged_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-    [
-      receipt.messageId,
-      receipt.guildId,
-      receipt.channelId,
-      receipt.emailId,
-      receipt.fromAddress ?? null,
-      receipt.subject ?? null,
-      receipt.acknowledgedBy ?? null,
-      receipt.acknowledgedAt ?? null,
-    ]
-  );
+  const existingIndex = db.data.messageReceipts.findIndex((r) => r.messageId === receipt.messageId);
+  const record = { ...receipt };
+
+  if (existingIndex >= 0) {
+    db.data.messageReceipts[existingIndex] = record;
+  } else {
+    db.data.messageReceipts.push(record);
+  }
+
+  await db.save();
 }
 
 export async function markAcknowledged(db: Database, messageId: string, userId: string): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
-  await db.run(
-    `
-      UPDATE message_receipts
-      SET acknowledged_by = ?, acknowledged_at = ?
-      WHERE message_id = ?
-    `,
-    [userId, now, messageId]
-  );
+  const receipt = db.data.messageReceipts.find((r) => r.messageId === messageId);
+  if (!receipt) return;
+
+  receipt.acknowledgedBy = userId;
+  receipt.acknowledgedAt = now;
+
+  await db.save();
 }
 
 export async function getReceipt(db: Database, messageId: string): Promise<MessageReceipt | null> {
-  const row = await db.get(
-    `
-      SELECT message_id, guild_id, channel_id, email_id, from_address, subject, acknowledged_by, acknowledged_at
-      FROM message_receipts
-      WHERE message_id = ?
-    `,
-    [messageId]
+  const receipt = db.data.messageReceipts.find((r) => r.messageId === messageId);
+  return receipt ? { ...receipt } : null;
+}
+
+export function getReceiptByEmailId(
+  db: Database,
+  emailId: string,
+  channelId?: string,
+  mailboxAddress?: string
+): MessageReceipt | null {
+  const receipt = db.data.messageReceipts.find(
+    (r) =>
+      r.emailId === emailId &&
+      (!channelId || r.channelId === channelId) &&
+      (!mailboxAddress || r.mailboxAddress === mailboxAddress)
   );
+  return receipt ? { ...receipt } : null;
+}
 
-  if (!row) {
-    return null;
-  }
+export async function setUnsubscribed(
+  db: Database,
+  messageId: string,
+  ruleId: number,
+  userId: string
+): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  const receipt = db.data.messageReceipts.find((r) => r.messageId === messageId);
+  if (!receipt) return;
 
-  return {
-    messageId: row.message_id,
-    guildId: row.guild_id,
-    channelId: row.channel_id,
-    emailId: row.email_id,
-    fromAddress: row.from_address ?? undefined,
-    subject: row.subject ?? undefined,
-    acknowledgedBy: row.acknowledged_by ?? undefined,
-    acknowledgedAt: row.acknowledged_at ?? undefined,
-  };
+  receipt.unsubRuleId = ruleId;
+  receipt.unsubscribedBy = userId;
+  receipt.unsubscribedAt = now;
+
+  await db.save();
 }

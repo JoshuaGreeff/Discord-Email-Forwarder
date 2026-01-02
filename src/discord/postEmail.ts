@@ -4,16 +4,18 @@ import {
   EmbedBuilder,
   TextChannel,
 } from "discord.js";
-import { Database } from "sqlite";
+import { Database } from "../db/client";
 import { saveMessageReceipt } from "../db/messages";
 import { MailMessage } from "../graph/mail";
 import { buildComponents } from "./interactions";
+import { cleanBodyPreview } from "../mail/normalize";
 
 export async function postEmailToChannel(params: {
   client: Client;
   db: Database;
   guildId: string;
   channelId: string;
+  mailboxAddress: string;
   email: MailMessage;
 }): Promise<void> {
   const channel = await params.client.channels.fetch(params.channelId);
@@ -21,7 +23,7 @@ export async function postEmailToChannel(params: {
     return;
   }
 
-  const bodyPreview = params.email.body.length > 1800 ? `${params.email.body.slice(0, 1800)}…` : params.email.body;
+  const bodyPreview = cleanBodyPreview(params.email.body, params.email.bodyType, 1800);
   const embed = new EmbedBuilder()
     .setTitle(params.email.subject || "(no subject)")
     .setDescription(bodyPreview || "_No content_")
@@ -33,18 +35,27 @@ export async function postEmailToChannel(params: {
 
   const message = await (channel as TextChannel).send({
     embeds: [embed],
-    components: buildComponents("pending", false, params.email.from, params.email.subject),
+    components: buildComponents({
+      messageId: "pending",
+      disableAck: false,
+      hasUnsubRule: false,
+    }),
   });
 
   // Now that we have the Discord message ID, rebuild components with the real ID
   await message.edit({
-    components: buildComponents(message.id, false, params.email.from, params.email.subject),
+    components: buildComponents({
+      messageId: message.id,
+      disableAck: false,
+      hasUnsubRule: false,
+    }),
   });
 
   await saveMessageReceipt(params.db, {
     messageId: message.id,
     guildId: params.guildId,
     channelId: params.channelId,
+    mailboxAddress: params.mailboxAddress,
     emailId: params.email.id,
     fromAddress: params.email.from,
     subject: params.email.subject,

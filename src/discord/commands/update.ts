@@ -1,11 +1,14 @@
 import {
   ChannelType,
   ChatInputCommandInteraction,
+  MessageFlags,
   PermissionsBitField,
   SlashCommandBuilder,
 } from "discord.js";
-import { Database } from "sqlite";
+import { Database } from "../../db/client";
 import { getChannelSettings, upsertChannelSettings } from "../../db/settings";
+
+const POLL_CRON_FIXED = "*/5 * * * *";
 
 export const data = new SlashCommandBuilder()
   .setName("update")
@@ -18,10 +21,13 @@ export const data = new SlashCommandBuilder()
       .setRequired(true)
   )
   .addStringOption((option) =>
-    option.setName("mailbox_address").setDescription("Shared mailbox address.").setRequired(false)
+    option.setName("mailbox_address").setDescription("Shared mailbox address to update.").setRequired(true)
   )
   .addStringOption((option) =>
-    option.setName("mailbox_user").setDescription("Service account UPN.").setRequired(false)
+    option
+      .setName("mailbox_alias")
+      .setDescription("Friendly mailbox label (shown in Discord).")
+      .setRequired(false)
   )
   .addStringOption((option) =>
     option.setName("tenant_id").setDescription("Azure AD tenant ID.").setRequired(false)
@@ -31,17 +37,11 @@ export const data = new SlashCommandBuilder()
   )
   .addStringOption((option) =>
     option.setName("client_secret").setDescription("Azure app client secret.").setRequired(false)
-  )
-  .addStringOption((option) =>
-    option.setName("redirect_uri").setDescription("OAuth redirect URI.").setRequired(false)
-  )
-  .addStringOption((option) =>
-    option.setName("poll_cron").setDescription("Cron expression for polling.").setRequired(false)
   );
 
 export async function handleUpdate(interaction: ChatInputCommandInteraction, db: Database): Promise<void> {
   if (!interaction.guildId) {
-    await interaction.reply({ content: "This command can only be used in a server.", ephemeral: true });
+    await interaction.reply({ content: "This command can only be used in a server.", flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -52,21 +52,22 @@ export async function handleUpdate(interaction: ChatInputCommandInteraction, db:
     (member.permissions as PermissionsBitField).has(PermissionsBitField.Flags.ManageGuild);
 
   if (!hasAdmin) {
-    await interaction.reply({ content: "You need the Manage Server permission to run /update.", ephemeral: true });
+    await interaction.reply({ content: "You need the Manage Server permission to run /update.", flags: MessageFlags.Ephemeral });
     return;
   }
 
   const channel = interaction.options.getChannel("channel", true);
   if (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildAnnouncement) {
-    await interaction.reply({ content: "Channel must be a text or announcement channel.", ephemeral: true });
+    await interaction.reply({ content: "Channel must be a text or announcement channel.", flags: MessageFlags.Ephemeral });
     return;
   }
 
-  const existing = await getChannelSettings(db, interaction.guildId, channel.id);
+  const targetMailbox = interaction.options.getString("mailbox_address", true);
+  const existing = await getChannelSettings(db, interaction.guildId, channel.id, targetMailbox);
   if (!existing) {
     await interaction.reply({
-      content: "No settings found for that channel. Run /setup first.",
-      ephemeral: true,
+      content: "No settings found for that channel + mailbox. Run /setup first.",
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -74,21 +75,35 @@ export async function handleUpdate(interaction: ChatInputCommandInteraction, db:
   const updated = {
     guildId: interaction.guildId,
     channelId: channel.id,
-    mailboxAddress: interaction.options.getString("mailbox_address") ?? existing.mailboxAddress,
-    mailboxUser: interaction.options.getString("mailbox_user") ?? existing.mailboxUser,
+    mailboxAddress: existing.mailboxAddress,
+    mailboxUser: interaction.options.getString("mailbox_alias") ?? existing.mailboxUser ?? existing.mailboxAddress,
     tenantId: interaction.options.getString("tenant_id") ?? existing.tenantId,
     clientId: interaction.options.getString("client_id") ?? existing.clientId,
     clientSecret: interaction.options.getString("client_secret") ?? existing.clientSecret,
-    redirectUri: interaction.options.getString("redirect_uri") ?? existing.redirectUri,
+    redirectUri: existing.redirectUri ?? "app-only",
     accessToken: existing.accessToken,
     refreshToken: existing.refreshToken,
     expiresAt: existing.expiresAt,
-    pollCron: interaction.options.getString("poll_cron") ?? existing.pollCron,
+    pollCron: POLL_CRON_FIXED,
   };
+
+  const credentialsChanged =
+    updated.tenantId !== existing.tenantId ||
+    updated.clientId !== existing.clientId ||
+    updated.clientSecret !== existing.clientSecret;
+
+  if (credentialsChanged) {
+    updated.accessToken = undefined;
+    updated.refreshToken = undefined;
+    updated.expiresAt = undefined;
+  }
 
   await upsertChannelSettings(db, updated);
 
-  const maskedSecret = `${updated.clientSecret.slice(0, 6)}…`;
+  const maskedSecret =
+    updated.clientSecret && updated.clientSecret.length > 6
+      ? `${updated.clientSecret.slice(0, 6)}***`
+      : "(hidden)";
   await interaction.reply({
     content: [
       `Updated settings for <#${channel.id}>.`,
@@ -97,10 +112,9 @@ export async function handleUpdate(interaction: ChatInputCommandInteraction, db:
       `Tenant: ${updated.tenantId}`,
       `Client ID: ${updated.clientId}`,
       `Client Secret: ${maskedSecret}`,
-      `Redirect URI: ${updated.redirectUri}`,
-      `Cron: ${updated.pollCron}`,
-      "Re-run the OAuth link if client/secret/tenant/redirect changed.",
+      `Cron: ${updated.pollCron} (fixed)`,
+      "App-only access tokens will refresh automatically when needed.",
     ].join("\n"),
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }
