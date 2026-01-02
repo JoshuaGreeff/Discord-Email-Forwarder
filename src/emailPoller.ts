@@ -44,12 +44,20 @@ async function processMailbox(db: Database, client: Client, target: ChannelSetti
   for (const mail of messages) {
     const alreadyHandled = getReceiptByEmailId(db, mail.id, target.channelId, target.mailboxAddress);
     if (alreadyHandled) {
-      await markMessageRead(graph, target.mailboxAddress, mail.id);
+      try {
+        await markMessageRead(graph, target.mailboxAddress, mail.id);
+      } catch (err) {
+        console.warn(`Failed to mark read (already handled) for ${mail.id}: ${String(err)}`);
+      }
       continue;
     }
 
     if (shouldSkipEmail(rules, { from: mail.from, subject: mail.subject })) {
-      await markMessageRead(graph, target.mailboxAddress, mail.id);
+      try {
+        await markMessageRead(graph, target.mailboxAddress, mail.id);
+      } catch (err) {
+        console.warn(`Failed to mark read (skipped) for ${mail.id}: ${String(err)}`);
+      }
       continue;
     }
 
@@ -62,7 +70,11 @@ async function processMailbox(db: Database, client: Client, target: ChannelSetti
       email: mail,
     });
 
-    await markMessageRead(graph, target.mailboxAddress, mail.id);
+    try {
+      await markMessageRead(graph, target.mailboxAddress, mail.id);
+    } catch (err) {
+      console.warn(`Failed to mark read for ${mail.id}: ${String(err)}`);
+    }
   }
 }
 
