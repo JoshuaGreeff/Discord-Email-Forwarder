@@ -47,9 +47,9 @@ export async function handleUpdate(interaction: ChatInputCommandInteraction, db:
 
   const member = interaction.member;
   const hasAdmin =
-    typeof member === "string"
-      ? false
-      : (member.permissions as PermissionsBitField).has(PermissionsBitField.Flags.ManageGuild);
+    member &&
+    typeof member !== "string" &&
+    (member.permissions as PermissionsBitField).has(PermissionsBitField.Flags.ManageGuild);
 
   if (!hasAdmin) {
     await interaction.reply({ content: "You need the Manage Server permission to run /update.", ephemeral: true });
