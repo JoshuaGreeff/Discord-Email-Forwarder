@@ -7,6 +7,23 @@ export interface MessageReceipt {
   channelId: string;
   mailboxAddress: string;
   emailId: string;
+  receivedAt: string | null;
+  bodyPreview: string | null;
+  bodyFull: string | null;
+  createdAt: number;
+  fromAddress: string | null;
+  subject: string | null;
+  acknowledgedBy: string | null;
+  acknowledgedAt: number | null;
+  acknowledgedName: string | null;
+}
+
+export interface MessageReceiptInput {
+  messageId: string;
+  guildId: string;
+  channelId: string;
+  mailboxAddress: string;
+  emailId: string;
   receivedAt?: string | null;
   bodyPreview?: string | null;
   bodyFull?: string | null;
@@ -18,10 +35,10 @@ export interface MessageReceipt {
   acknowledgedName?: string | null;
 }
 
-export async function saveMessageReceipt(db: Database, receipt: MessageReceipt): Promise<void> {
+export async function saveMessageReceipt(db: Database, receipt: MessageReceiptInput): Promise<void> {
   const existingIndex = db.data.messageReceipts.findIndex((r) => r.messageId === receipt.messageId);
   const now = Math.floor(Date.now() / 1000);
-  const record = {
+  const record: MessageReceipt = {
     ...receipt,
     createdAt: receipt.createdAt ?? now,
     fromAddress: receipt.fromAddress ?? null,

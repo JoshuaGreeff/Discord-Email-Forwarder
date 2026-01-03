@@ -1,14 +1,16 @@
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonInteraction,
+  ButtonStyle,
   ChannelType,
   ChatInputCommandInteraction,
   EmbedBuilder,
+  MessageFlags,
   SlashCommandBuilder,
-  User,
 } from "discord.js";
 import { Database } from "../../db/client";
 import { MessageReceipt } from "../../db/messages";
-
-const MAX_RESULTS = 50;
 
 export const data = new SlashCommandBuilder()
   .setName("history")
@@ -71,6 +73,22 @@ function buildPageEmbed(records: MessageReceipt[], page: number, pageSize: numbe
   return embed;
 }
 
+function buildNavRow(page: number, totalPages: number) {
+  const prev = new ButtonBuilder()
+    .setCustomId("history:prev")
+    .setEmoji("◀️")
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(page <= 0);
+
+  const next = new ButtonBuilder()
+    .setCustomId("history:next")
+    .setEmoji("▶️")
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(page >= totalPages - 1);
+
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(prev, next);
+}
+
 export async function handleHistory(interaction: ChatInputCommandInteraction, db: Database): Promise<void> {
   if (!interaction.guildId) {
     await interaction.reply({ content: "This command can only be used in a server." });
@@ -100,40 +118,35 @@ export async function handleHistory(interaction: ChatInputCommandInteraction, db
 
   const pageSize = 5;
   let page = 0;
+  const totalPages = Math.max(1, Math.ceil(matches.length / pageSize));
 
   await interaction.reply({
     embeds: [buildPageEmbed(matches, page, pageSize)],
+    components: [buildNavRow(page, totalPages)],
+    flags: MessageFlags.Ephemeral,
   });
 
   const reply = await interaction.fetchReply();
 
-  const emojis = ["◀️", "⏹️", "▶️"];
-  for (const emoji of emojis) {
-    await reply.react(emoji).catch(() => {});
-  }
-
-  const collector = reply.createReactionCollector({
+  const collector = reply.createMessageComponentCollector({
     time: 60000,
-    filter: (reaction, user) => emojis.includes(reaction.emoji.name ?? "") && user.id === interaction.user.id,
+    filter: (i) => i.user.id === interaction.user.id && i.customId.startsWith("history:"),
   });
 
-  collector.on("collect", (reaction, user) => {
-    switch (reaction.emoji.name) {
-      case "◀️":
-        page = Math.max(0, page - 1);
-        break;
-      case "▶️":
-        page = Math.min(Math.max(0, Math.ceil(matches.length / pageSize) - 1), page + 1);
-        break;
-      case "⏹️":
-        collector.stop();
-        return;
+  collector.on("collect", async (i: ButtonInteraction) => {
+    if (i.customId === "history:prev") {
+      page = Math.max(0, page - 1);
+    } else if (i.customId === "history:next") {
+      page = Math.min(Math.max(0, totalPages - 1), page + 1);
     }
-    reply.edit({ embeds: [buildPageEmbed(matches, page, pageSize)] }).catch(() => {});
-    reaction.users.remove(user.id).catch(() => {});
+
+    await i.update({
+      embeds: [buildPageEmbed(matches, page, pageSize)],
+      components: [buildNavRow(page, totalPages)],
+    });
   });
 
   collector.on("end", () => {
-    reply.reactions.removeAll().catch(() => {});
+    reply.edit({ components: [] }).catch(() => {});
   });
 }

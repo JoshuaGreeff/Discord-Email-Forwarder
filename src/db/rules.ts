@@ -2,6 +2,17 @@ import { Database } from "./client";
 import { normalizeAddress } from "./settings";
 
 export interface Rule {
+  id: number;
+  guildId: string;
+  channelId: string;
+  mailboxAddress: string;
+  friendlyName: string | null;
+  fromAddress: string;
+  subjectContains: string | null;
+  createdAt: number;
+}
+
+export interface RuleInput {
   id?: number;
   guildId: string;
   channelId: string;
@@ -12,7 +23,7 @@ export interface Rule {
   createdAt?: number;
 }
 
-export async function upsertRule(db: Database, rule: Rule): Promise<number> {
+export async function upsertRule(db: Database, rule: RuleInput): Promise<number> {
   const now = Math.floor(Date.now() / 1000);
   const normalizedMailbox = normalizeAddress(rule.mailboxAddress);
   const normalizedFrom = normalizeAddress(rule.fromAddress);

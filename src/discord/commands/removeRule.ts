@@ -1,6 +1,7 @@
 import {
   ActionRowBuilder,
   ChatInputCommandInteraction,
+  EmbedBuilder,
   MessageFlags,
   PermissionsBitField,
   SlashCommandBuilder,
@@ -98,8 +99,17 @@ export async function handleRemoveRuleSelect(interaction: any, db: Database): Pr
     return;
   }
 
+  const embed = new EmbedBuilder()
+    .setTitle("Rule removed")
+    .setColor(0xe74c3c)
+    .addFields(
+      { name: "Channel", value: `<#${channelId}>`, inline: false },
+      { name: "Mailbox", value: mailboxAddress, inline: false },
+      { name: "Rule ID", value: `${ruleId}`, inline: false }
+    );
+
   await interaction.update({
-    content: `Removed rule ${ruleId} for <#${channelId}> / ${mailboxAddress}.`,
+    embeds: [embed],
     components: [],
   });
 }

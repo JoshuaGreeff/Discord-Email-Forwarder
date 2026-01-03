@@ -1,4 +1,3 @@
-import fetch from "isomorphic-fetch";
 import { Client } from "@microsoft/microsoft-graph-client";
 
 export interface GraphTokenSet {

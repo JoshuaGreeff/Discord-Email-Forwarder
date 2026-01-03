@@ -8,6 +8,18 @@ export interface MailboxResource {
   tenantId: string;
   clientId: string;
   clientSecret: string;
+  accessToken: string | null;
+  expiresAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MailboxResourceInput {
+  id?: string;
+  mailboxAddress: string;
+  tenantId: string;
+  clientId: string;
+  clientSecret: string;
   accessToken?: string | null;
   expiresAt?: number | null;
   createdAt?: number;
@@ -26,7 +38,7 @@ export interface ResourceStore {
 const DATA_FILE = path.join(process.cwd(), "data", "resources.json");
 let resourceInstance: ResourceStore | null = null;
 
-function normalizeMailboxResource(record: MailboxResource): MailboxResource {
+function normalizeMailboxResource(record: MailboxResourceInput): MailboxResource {
   const now = Math.floor(Date.now() / 1000);
   return {
     id: record.id ?? normalizeAddress(record.mailboxAddress),
@@ -93,7 +105,7 @@ export function getResourceById(store: ResourceStore, id: string): MailboxResour
   return found ? { ...found } : null;
 }
 
-export async function upsertResource(store: ResourceStore, resource: MailboxResource): Promise<MailboxResource> {
+export async function upsertResource(store: ResourceStore, resource: MailboxResourceInput): Promise<MailboxResource> {
   const normalized = normalizeMailboxResource(resource);
   const existingIndex = store.data.mailboxes.findIndex((r) => r.id === normalized.id);
   const now = Math.floor(Date.now() / 1000);

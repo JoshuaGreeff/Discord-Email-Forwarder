@@ -36,9 +36,9 @@ export async function postEmailToChannel(params: {
   }
 
   const fullBody = cleanBodyPreview(params.email.body, params.email.bodyType, 4000);
-  const truncatedPreview =
-    fullBody.length > 500 ? `${fullBody.slice(0, 500)}…` : fullBody.length ? fullBody : "_No content_";
   const hasOverflow = fullBody.length > 500;
+  const truncatedPreview =
+    fullBody.length > 500 ? `${fullBody.slice(0, 500)}...` : fullBody.length ? fullBody : "_No content_";
   const parsedReceived = params.email.receivedAt ? Date.parse(params.email.receivedAt) : NaN;
   const receivedText = params.email.receivedAt ?? "Unknown";
   const embed = new EmbedBuilder()

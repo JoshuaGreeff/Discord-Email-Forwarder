@@ -9,8 +9,7 @@ import { Database } from "../../db/client";
 import { DEFAULT_ACK_EXPIRY_DAYS, listChannelSettings, normalizeAddress, upsertChannelSettings } from "../../db/settings";
 import { getResourceStore, getResourceById, upsertResource } from "../../db/resources";
 import { verifyMailboxAccess } from "../../mail/verify";
-
-const POLL_CRON_FIXED = "*/5 * * * *";
+import { POLL_INTERVAL_MINUTES } from "../../config/poll";
 
 export const data = new SlashCommandBuilder()
   .setName("update")
@@ -127,7 +126,6 @@ export async function handleUpdate(interaction: ChatInputCommandInteraction, db:
     channelId: existing.channelId,
     mailboxAddress: existing.mailboxAddress,
     mailboxUser,
-    pollCron: POLL_CRON_FIXED,
     ackExpiryDays,
     checkJunk,
     resourceId: resource.id,
@@ -148,7 +146,7 @@ export async function handleUpdate(interaction: ChatInputCommandInteraction, db:
       { name: "Alias", value: mailboxUser, inline: false },
       { name: "Tenant / Client", value: `${maskedTenant}\n${maskedClient}`, inline: false },
       { name: "Secret", value: maskedSecret, inline: false },
-      { name: "Polling", value: `${POLL_CRON_FIXED} (Junk: ${checkJunk ? "on" : "off"})`, inline: false },
+      { name: "Polling", value: `Every ${POLL_INTERVAL_MINUTES} minutes (Junk: ${checkJunk ? "on" : "off"})`, inline: false },
       { name: "Ack", value: `Auto after: ${ackText}\nHistory: 30 days`, inline: false }
     );
 

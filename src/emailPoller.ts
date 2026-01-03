@@ -1,4 +1,3 @@
-import cron from "node-cron";
 import { Client } from "discord.js";
 import { Database } from "./db/client";
 import { ChannelSettings, listChannelSettings } from "./db/settings";
@@ -10,6 +9,7 @@ import { logger } from "./logger";
 import { ResourceStore, getResourceById, upsertResource } from "./db/resources";
 import { normalizeAddress } from "./db/settings";
 import { listRules, matchesRule } from "./db/rules";
+import { POLL_INTERVAL_MS } from "./config/poll";
 
 const log = logger("emailPoller");
 
@@ -147,24 +147,34 @@ async function processMailbox(db: Database, resources: ResourceStore, client: Cl
 }
 
 export function startPolling(db: Database, resources: ResourceStore, client: Client): void {
-  const runCycle = async () => {
-    const pruned = await pruneMessageReceipts(db);
-    if (pruned > 0) {
-      log.debug("Pruned old receipts", { pruned });
-    }
+  let running = false;
 
-    const settings = await listChannelSettings(db);
-    for (const setting of settings) {
-      try {
-        await processMailbox(db, resources, client, setting);
-      } catch (err) {
-        log.error("Error processing channel", { channelId: setting.channelId, err });
+  const runCycle = async () => {
+    if (running) return;
+    running = true;
+
+    const cycleStart = Date.now();
+    try {
+      const pruned = await pruneMessageReceipts(db);
+      if (pruned > 0) {
+        log.debug("Pruned old receipts", { pruned });
       }
+
+      const settings = await listChannelSettings(db);
+      for (const setting of settings) {
+        try {
+          await processMailbox(db, resources, client, setting);
+        } catch (err) {
+          log.error("Error processing channel", { channelId: setting.channelId, err });
+        }
+      }
+    } finally {
+      running = false;
+      const elapsed = Date.now() - cycleStart;
+      const delay = Math.max(0, POLL_INTERVAL_MS - elapsed);
+      setTimeout(runCycle, delay);
     }
   };
 
-  cron.schedule("*/5 * * * *", runCycle);
-
-  // Run once on startup so we don't wait for the first cron interval.
   runCycle().catch((err) => console.error("Error during initial poll", err));
 }

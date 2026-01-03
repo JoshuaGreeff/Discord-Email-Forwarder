@@ -8,6 +8,7 @@ import {
 import { Database } from "../../db/client";
 import { listChannelSettings } from "../../db/settings";
 import { listRules } from "../../db/rules";
+import { POLL_INTERVAL_MINUTES } from "../../config/poll";
 
 export const data = new SlashCommandBuilder()
   .setName("settings")
@@ -56,7 +57,7 @@ export async function handleSettings(interaction: ChatInputCommandInteraction, d
       [
         `Channel: <#${setting.channelId}>`,
         `Mailbox: ${setting.mailboxAddress} (${setting.mailboxUser})`,
-        `Cron: ${setting.pollCron ?? "*/5 * * * *"} (Junk: ${setting.checkJunk ? "on" : "off"})`,
+        `Polling: Every ${POLL_INTERVAL_MINUTES} minutes (Junk: ${setting.checkJunk ? "on" : "off"})`,
         `Ack expiry: ${ackText}`,
         `Rules: ${rules.length ? rules.map((r) => `${r.id}:${r.friendlyName ?? r.fromAddress}`).join(", ") : "none"}`,
       ].join("\n")

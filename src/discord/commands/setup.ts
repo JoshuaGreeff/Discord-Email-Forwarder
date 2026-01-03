@@ -10,8 +10,7 @@ import { DEFAULT_ACK_EXPIRY_DAYS, upsertChannelSettings } from "../../db/setting
 import { findResourceByMailbox, getResourceStore, upsertResource } from "../../db/resources";
 import { verifyMailboxAccess } from "../../mail/verify";
 import { EmbedBuilder } from "discord.js";
-
-const POLL_CRON_FIXED = "*/5 * * * *";
+import { POLL_INTERVAL_MINUTES } from "../../config/poll";
 
 export const data = new SlashCommandBuilder()
   .setName("setup")
@@ -97,7 +96,6 @@ export async function handleSetup(interaction: ChatInputCommandInteraction, db: 
   const clientSecret = interaction.options.getString("client_secret", true);
   const ackExpiryDays = interaction.options.getInteger("ack_expiry_days") ?? undefined;
   const checkJunk = interaction.options.getBoolean("check_junk") ?? false;
-  const pollCron = POLL_CRON_FIXED;
 
   const resources = await getResourceStore();
   const existingResource = findResourceByMailbox(resources, mailboxAddress);
@@ -148,7 +146,6 @@ export async function handleSetup(interaction: ChatInputCommandInteraction, db: 
     resourceId: resource.id,
     ackExpiryDays,
     checkJunk,
-    pollCron,
   });
 
   const ackText = ackExpiryDays === 0 ? "never (manual only)" : `${ackExpiryDays ?? DEFAULT_ACK_EXPIRY_DAYS} day(s)`;
@@ -164,7 +161,7 @@ export async function handleSetup(interaction: ChatInputCommandInteraction, db: 
       { name: "Channel", value: `<#${channel.id}>`, inline: false },
       { name: "Mailbox", value: mailboxAddress, inline: false },
       { name: "Alias", value: mailboxAlias, inline: false },
-      { name: "Polling", value: `${pollCron} (Junk: ${checkJunk ? "on" : "off"})`, inline: false },
+      { name: "Polling", value: `Every ${POLL_INTERVAL_MINUTES} minutes (Junk: ${checkJunk ? "on" : "off"})`, inline: false },
       { name: "Tenant / Client", value: `${maskedTenant}\n${maskedClient}`, inline: false },
       { name: "Ack", value: `Auto after: ${ackText}\nHistory: 30 days`, inline: false }
     );

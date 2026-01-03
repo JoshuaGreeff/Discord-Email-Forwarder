@@ -10,8 +10,7 @@ type ChannelSettingsRecord = {
   mailboxUser: string;
   ackExpiryDays: number;
   resourceId: string;
-  checkJunk?: boolean;
-  pollCron: string;
+  checkJunk: boolean;
   createdAt: number;
   updatedAt: number;
 };
@@ -63,7 +62,6 @@ const DEFAULT_ACK_EXPIRY_DAYS = 5;
 function normalizeChannelSettings(records: any[]): ChannelSettingsRecord[] {
   return records.map((record) => {
     const now = Math.floor(Date.now() / 1000);
-    const pollCron = record.pollCron ?? "*/5 * * * *";
     const ackExpiryDays = record.ackExpiryDays ?? DEFAULT_ACK_EXPIRY_DAYS;
     const checkJunk = record.checkJunk ?? false;
 
@@ -79,7 +77,6 @@ function normalizeChannelSettings(records: any[]): ChannelSettingsRecord[] {
         record.resourceId ??
         record.id ??
         `${record.guildId}:${record.channelId}:${String(record.mailboxAddress).toLowerCase()}`,
-      pollCron,
       createdAt: record.createdAt ?? now,
       updatedAt: record.updatedAt ?? now,
     };
