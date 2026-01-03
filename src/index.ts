@@ -3,11 +3,13 @@ dotenv.config();
 
 import express from "express";
 import { getDb } from "./db/client";
+import { getResourceStore } from "./db/resources";
 import { createClient } from "./discord/bot";
 import { startPolling } from "./emailPoller";
 
 async function bootstrap() {
   const db = await getDb();
+  const resources = await getResourceStore();
 
   const client = createClient(db);
   const token = process.env.DISCORD_TOKEN;
@@ -24,9 +26,8 @@ async function bootstrap() {
     console.log(`Health server listening on ${port}`);
   });
 
-  startPolling(db, client);
-
   await client.login(token);
+  startPolling(db, resources, client);
 }
 
 bootstrap().catch((err) => {

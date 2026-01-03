@@ -1,32 +1,35 @@
 # Discord Email Forwarder
 
-A Discord bot that reads emails from a Microsoft 365 shared mailbox (Azure app-only) and forwards them to Discord channels with acknowledgements and unsubscribe rules.
+A Discord bot that reads emails from a Microsoft 365 shared mailbox (Azure app-only) and forwards them to Discord channels with acknowledgements.
 
 ## Features
 - `/setup` to configure a channel + mailbox + Azure app creds; app-only auth means no user OAuth links.
 - `/update` to adjust settings with masked secrets; tokens refresh automatically (select the channel and mailbox to update).
 - Polls each configured mailbox (application Graph access) and posts each unread email (subject + body) to the target channel. Poll runs immediately on boot, then every 5 minutes.
-- Buttons on each posted email:
-  - **Acknowledge**: greys out after click and records the user in the embed footer.
-  - **Unsubscribe/Edit rule**: opens a modal prefilled with From/Subject; creates or edits a rule (sender match AND subject contains) to suppress future posts.
-  - **Rules ⚙️**: shows all unsubscribe rules for that channel.
+- Button on each posted email:
+  - **Acknowledge**: greys out after click, records the user in the embed footer, and clears the body/fields to save space.
 - Per-channel settings now support multiple mailboxes per channel; each mailbox is tracked independently.
+- Receipts auto-prune after acknowledgement or when the per-channel expiry window elapses (default 5 days, configurable).
+- Each mailbox (credentials) is treated as a single resource and can only be bound to one channel; reuse is blocked to avoid split delivery.
+- Mailbox credentials are verified on setup/update before saving.
 
 ## Quick start
 1) Create an Azure app with **application** Graph permissions (Mail.Read or Mail.ReadBasic.All) and grant admin consent. Give the app access to the mailbox via an application access policy or full access on the shared mailbox. Create a client secret.
 2) Copy `.env.example` to `.env` and set:
    - `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `PORT` (health endpoint; defaults to 3000).
 3) `npm install`
-4) Start the bot: `npm run dev` (or `npm run build && npm start`).
+4) Start the bot: `npm run dev` (enables dev logging via `DEV_LOGGING=1`) or `npm run build && npm start` for prod.
 5) Run `/setup` in your server (Manage Server required):
-   - Provide channel, mailbox address (e.g., `admin-intake@yourcompany.com`), optional mailbox alias (shown in Discord), tenant ID, client ID, client secret.
+   - Provide channel, mailbox address (e.g., `admin-intake@yourcompany.com`), optional mailbox alias (shown in Discord), tenant ID, client ID, client secret, optional `ack_expiry_days` (default 5).
    - The bot will fetch app-only tokens automatically once saved. Polling is fixed at every 5 minutes (top 10 unread per mailbox).
    - You can add multiple mailboxes to the same channel by running `/setup` again with a different mailbox address.
+   - A mailbox already bound to another channel will be rejected to prevent duplicate delivery.
 
 ## Notes
 - Polling is every 5 minutes (cron `*/5 * * * *`, fetches top 10 unread). This schedule is fixed.
-- Rules skip delivery when the sender matches AND the subject contains the provided substring; matched emails are marked read in the mailbox.
-- Data is stored in `data/db.json` (plain JSON file); secrets are stored as provided-use OS-level protections.
+- After acknowledgement, the message body and fields are cleared; the embed footer shows who acknowledged it.
+- Receipts are removed from the JSON DB once acknowledged or when the per-channel expiry window elapses.
+- Data is stored in `data/db.json` (plain JSON file); secrets are stored as provided—use OS-level protections.
 
 ## Adding shared mailboxes (joshuagreeff.cc)
 Use one app registration (application permissions) and one mail-enabled security group to scope mailbox access. Add each shared mailbox you want to forward into that group, then run `/setup` per Discord channel.

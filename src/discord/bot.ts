@@ -4,15 +4,18 @@ import { Client, Collection, Events, GatewayIntentBits, Interaction } from "disc
 import { Database } from "../db/client";
 import * as setupCommand from "./commands/setup";
 import * as updateCommand from "./commands/update";
+import * as historyCommand from "./commands/history";
+import * as setRuleCommand from "./commands/setRule";
+import * as removeRuleCommand from "./commands/removeRule";
+import * as settingsCommand from "./commands/settings";
+import * as removeMailboxCommand from "./commands/removeMailbox";
+import * as helpCommand from "./commands/help";
+import { handleSetRuleModal, isSetRuleModal } from "./commands/setRule";
 import {
   handleAck,
-  handleUnsubscribe,
-  handleUnsubscribeModal,
-  handleShowRules,
+  handleShowMore,
   isAck,
-  isShowRules,
-  isUnsub,
-  isUnsubModal,
+  isShowMore,
 } from "./interactions";
 
 type CommandModule = {
@@ -22,12 +25,18 @@ type CommandModule = {
 
 export function createClient(db: Database): Client {
   const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions],
   });
 
   const commands = new Collection<string, CommandModule>();
   commands.set(setupCommand.data.name, { data: setupCommand.data, handle: (i, db) => setupCommand.handleSetup(i as any, db) });
   commands.set(updateCommand.data.name, { data: updateCommand.data, handle: (i, db) => updateCommand.handleUpdate(i as any, db) });
+  commands.set(historyCommand.data.name, { data: historyCommand.data, handle: (i, db) => historyCommand.handleHistory(i as any, db) });
+  commands.set(setRuleCommand.data.name, { data: setRuleCommand.data, handle: (i, db) => setRuleCommand.handleSetRule(i as any, db) });
+  commands.set(removeRuleCommand.data.name, { data: removeRuleCommand.data, handle: (i, db) => removeRuleCommand.handleRemoveRule(i as any, db) });
+  commands.set(settingsCommand.data.name, { data: settingsCommand.data, handle: (i, db) => settingsCommand.handleSettings(i as any, db) });
+  commands.set(removeMailboxCommand.data.name, { data: removeMailboxCommand.data, handle: (i, db) => removeMailboxCommand.handleRemoveMailbox(i as any, db) });
+  commands.set(helpCommand.data.name, { data: helpCommand.data, handle: (i, db) => helpCommand.handleHelp(i as any, db) });
 
   client.once(Events.ClientReady, async () => {
     console.log(`Logged in as ${client.user?.tag}`);
@@ -42,14 +51,16 @@ export function createClient(db: Database): Client {
     } else if (interaction.isButton()) {
       if (isAck(interaction)) {
         await handleAck(interaction, db);
-      } else if (isUnsub(interaction)) {
-        await handleUnsubscribe(interaction, db);
-      } else if (isShowRules(interaction)) {
-        await handleShowRules(interaction, db);
+      } else if (isShowMore(interaction)) {
+        await handleShowMore(interaction, db);
+      }
+    } else if (interaction.isStringSelectMenu()) {
+      if (removeRuleCommand.isRemoveRuleSelect(interaction)) {
+        await removeRuleCommand.handleRemoveRuleSelect(interaction as any, db);
       }
     } else if (interaction.isModalSubmit()) {
-      if (isUnsubModal(interaction)) {
-        await handleUnsubscribeModal(interaction, db);
+      if (isSetRuleModal(interaction)) {
+        await handleSetRuleModal(interaction as any, db);
       }
     }
   });

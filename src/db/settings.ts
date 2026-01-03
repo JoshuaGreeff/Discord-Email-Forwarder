@@ -6,25 +6,25 @@ export interface ChannelSettings {
   channelId: string;
   mailboxAddress: string;
   mailboxUser: string;
-  tenantId: string;
-  clientId: string;
-  clientSecret: string;
-  redirectUri: string;
-  accessToken?: string;
-  refreshToken?: string;
-  expiresAt?: number;
+  ackExpiryDays?: number;
+  resourceId: string;
+  checkJunk?: boolean;
   pollCron?: string;
   createdAt?: number;
   updatedAt?: number;
 }
 
-function normalizeAddress(address: string): string {
+export const DEFAULT_ACK_EXPIRY_DAYS = 5;
+
+export function normalizeAddress(address: string): string {
   return address.trim().toLowerCase();
 }
 
 export async function upsertChannelSettings(db: Database, settings: ChannelSettings): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
   const pollCron = settings.pollCron ?? "*/5 * * * *";
+  const ackExpiryDays = settings.ackExpiryDays ?? DEFAULT_ACK_EXPIRY_DAYS;
+  const checkJunk = settings.checkJunk ?? false;
   const normalizedAddress = normalizeAddress(settings.mailboxAddress);
   const existingIndex = db.data.channelSettings.findIndex(
     (record) =>
@@ -39,6 +39,8 @@ export async function upsertChannelSettings(db: Database, settings: ChannelSetti
       ...existing,
       ...settings,
       pollCron,
+      ackExpiryDays,
+      checkJunk,
       createdAt: existing.createdAt ?? now,
       updatedAt: now,
       id: existing.id ?? `${settings.guildId}:${settings.channelId}:${normalizedAddress}`,
@@ -48,6 +50,8 @@ export async function upsertChannelSettings(db: Database, settings: ChannelSetti
       id: settings.id ?? `${settings.guildId}:${settings.channelId}:${normalizedAddress}`,
       ...settings,
       pollCron,
+      ackExpiryDays,
+      checkJunk,
       createdAt: now,
       updatedAt: now,
     });
@@ -69,12 +73,40 @@ export async function getChannelSettings(
       row.channelId === channelId &&
       normalizeAddress(row.mailboxAddress) === normalizedAddress
   );
-  return record ? { ...record, pollCron: record.pollCron ?? "*/5 * * * *" } : null;
+  return record
+    ? {
+        ...record,
+        pollCron: record.pollCron ?? "*/5 * * * *",
+        ackExpiryDays: record.ackExpiryDays ?? DEFAULT_ACK_EXPIRY_DAYS,
+        checkJunk: record.checkJunk ?? false,
+      }
+    : null;
 }
 
 export async function listChannelSettings(db: Database): Promise<ChannelSettings[]> {
   return db.data.channelSettings.map((row) => ({
     ...row,
     pollCron: row.pollCron ?? "*/5 * * * *",
+    ackExpiryDays: row.ackExpiryDays ?? DEFAULT_ACK_EXPIRY_DAYS,
+    checkJunk: row.checkJunk ?? false,
   }));
+}
+
+export async function deleteChannelSettings(
+  db: Database,
+  guildId: string,
+  channelId: string,
+  mailboxAddress: string
+): Promise<boolean> {
+  const normalized = normalizeAddress(mailboxAddress);
+  const idx = db.data.channelSettings.findIndex(
+    (row) =>
+      row.guildId === guildId &&
+      row.channelId === channelId &&
+      normalizeAddress(row.mailboxAddress) === normalized
+  );
+  if (idx === -1) return false;
+  db.data.channelSettings.splice(idx, 1);
+  await db.save();
+  return true;
 }

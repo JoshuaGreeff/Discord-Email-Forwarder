@@ -1,81 +1,114 @@
 import { Database } from "./client";
+import { normalizeAddress } from "./settings";
 
-export interface UnsubscribeRule {
+export interface Rule {
   id?: number;
   guildId: string;
   channelId: string;
-  fromAddress?: string;
-  subjectContains?: string;
+  mailboxAddress: string;
+  friendlyName?: string | null;
+  fromAddress: string;
+  subjectContains?: string | null;
   createdAt?: number;
 }
 
-export async function createRule(db: Database, rule: UnsubscribeRule): Promise<number> {
+export async function upsertRule(db: Database, rule: Rule): Promise<number> {
   const now = Math.floor(Date.now() / 1000);
-  const maxId = db.data.unsubscribeRules.reduce((max, r) => Math.max(max, r.id ?? 0), 0);
-  const recordId = maxId + 1;
+  const normalizedMailbox = normalizeAddress(rule.mailboxAddress);
+  const normalizedFrom = normalizeAddress(rule.fromAddress);
+  const normalizedSubject = rule.subjectContains?.toLowerCase() ?? null;
+  const friendlyName = rule.friendlyName ?? null;
 
-  db.data.unsubscribeRules.push({
-    id: recordId,
-    guildId: rule.guildId,
-    channelId: rule.channelId,
-    fromAddress: rule.fromAddress,
-    subjectContains: rule.subjectContains,
-    createdAt: now,
-  });
-
-  await db.save();
-  return recordId;
-}
-
-export async function listRulesForChannel(db: Database, guildId: string, channelId: string): Promise<UnsubscribeRule[]> {
-  return db.data.unsubscribeRules
-    .filter((rule) => rule.guildId === guildId && rule.channelId === channelId)
-    .sort((a, b) => (b.id ?? 0) - (a.id ?? 0))
-    .map((rule) => ({ ...rule }));
-}
-
-export async function deleteRule(db: Database, guildId: string, channelId: string, ruleId: number): Promise<boolean> {
-  const index = db.data.unsubscribeRules.findIndex(
-    (rule) => rule.id === ruleId && rule.guildId === guildId && rule.channelId === channelId
+  const existingIndex = db.data.rules.findIndex(
+    (r) =>
+      r.guildId === rule.guildId &&
+      r.channelId === rule.channelId &&
+      normalizeAddress(r.mailboxAddress) === normalizedMailbox &&
+      normalizeAddress(r.fromAddress) === normalizedFrom &&
+      (r.subjectContains ?? null) === normalizedSubject
   );
 
-  if (index === -1) return false;
+  if (existingIndex >= 0) {
+    const existing = db.data.rules[existingIndex];
+    db.data.rules[existingIndex] = {
+      ...existing,
+      subjectContains: normalizedSubject,
+      createdAt: existing.createdAt ?? now,
+      friendlyName,
+    };
+    await db.save();
+    return existing.id;
+  }
 
-  db.data.unsubscribeRules.splice(index, 1);
+  const maxId = db.data.rules.reduce((max, r) => Math.max(max, r.id ?? 0), 0);
+  const id = maxId + 1;
+  db.data.rules.push({
+    id,
+    guildId: rule.guildId,
+    channelId: rule.channelId,
+    mailboxAddress: normalizedMailbox,
+    friendlyName,
+    fromAddress: normalizedFrom,
+    subjectContains: normalizedSubject,
+    createdAt: now,
+  });
   await db.save();
-  return true;
+  return id;
 }
 
-export function getRuleById(
+export function listRules(
+  db: Database,
+  guildId: string,
+  channelId: string,
+  mailboxAddress: string
+): Rule[] {
+  const normalizedMailbox = normalizeAddress(mailboxAddress);
+  return db.data.rules
+    .filter(
+      (r) =>
+        r.guildId === guildId &&
+        r.channelId === channelId &&
+        normalizeAddress(r.mailboxAddress) === normalizedMailbox
+    )
+    .map((r) => ({ ...r }));
+}
+
+export async function deleteRule(
   db: Database,
   guildId: string,
   channelId: string,
   ruleId: number
-): UnsubscribeRule | null {
-  const rule = db.data.unsubscribeRules.find(
-    (r) => r.id === ruleId && r.guildId === guildId && r.channelId === channelId
-  );
-  return rule ? { ...rule } : null;
+): Promise<boolean> {
+  const idx = db.data.rules.findIndex((r) => r.id === ruleId && r.guildId === guildId && r.channelId === channelId);
+  if (idx === -1) return false;
+  db.data.rules.splice(idx, 1);
+  await db.save();
+  return true;
 }
 
-export async function updateRule(
+export async function deleteRulesForMailbox(
   db: Database,
   guildId: string,
   channelId: string,
-  ruleId: number,
-  updates: Pick<UnsubscribeRule, "fromAddress" | "subjectContains">
-): Promise<boolean> {
-  const index = db.data.unsubscribeRules.findIndex(
-    (r) => r.id === ruleId && r.guildId === guildId && r.channelId === channelId
+  mailboxAddress: string
+): Promise<number> {
+  const normalizedMailbox = normalizeAddress(mailboxAddress);
+  const before = db.data.rules.length;
+  db.data.rules = db.data.rules.filter(
+    (r) =>
+      !(r.guildId === guildId && r.channelId === channelId && normalizeAddress(r.mailboxAddress) === normalizedMailbox)
   );
-  if (index === -1) return false;
+  const removed = before - db.data.rules.length;
+  if (removed > 0) {
+    await db.save();
+  }
+  return removed;
+}
 
-  db.data.unsubscribeRules[index] = {
-    ...db.data.unsubscribeRules[index],
-    fromAddress: updates.fromAddress,
-    subjectContains: updates.subjectContains,
-  };
-
-  await db.save();
-  return true;
+export function matchesRule(rule: Rule, email: { from?: string; subject?: string }): boolean {
+  const fromMatch = email.from ? normalizeAddress(email.from) === normalizeAddress(rule.fromAddress) : false;
+  const subjectMatch = rule.subjectContains
+    ? Boolean(email.subject && email.subject.toLowerCase().includes(rule.subjectContains.toLowerCase()))
+    : true;
+  return fromMatch && subjectMatch;
 }
