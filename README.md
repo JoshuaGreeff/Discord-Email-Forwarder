@@ -36,7 +36,7 @@ A Discord bot that reads emails from a Microsoft 365 shared mailbox (Azure app-o
 - A `Dockerfile` and `docker-compose.yml` are provided. The compose file runs Postgres in a sibling container on an internal-only Docker network (no published ports) and the bot connects via that network.
 - Database credentials are expected from Portainer secrets or stack environment variables; see `docker-compose.yml` for the `db_password` secret placeholder.
 
-## Adding shared mailboxes (joshuagreeff.cc)
+## Adding shared mailboxes
 Use one app registration (application permissions) and one mail-enabled security group to scope mailbox access. Add each shared mailbox you want to forward into that group, then run `/setup` per Discord channel.
 
 Azure/Exchange (once):
@@ -45,7 +45,7 @@ Azure/Exchange (once):
   ```powershell
   Connect-ExchangeOnline
   New-DistributionGroup -Name "DiscordForwarderAccessSec" -Alias DiscordForwarderAccessSec `
-    -PrimarySmtpAddress forwarder-access@joshuagreeff.cc -Type Security
+    -PrimarySmtpAddress forwarder-access@domain.com -Type Security
   ```
 - Application access policy pointing at the group:
   ```powershell
@@ -58,20 +58,20 @@ Azure/Exchange (once):
 Add a mailbox (repeat for each):
 - Add the mailbox to the group:
   ```powershell
-  Add-DistributionGroupMember -Identity "DiscordForwarderAccessSec" -Member hetzner-cloud-notifications@joshuagreeff.cc
+  Add-DistributionGroupMember -Identity "DiscordForwarderAccessSec" -Member cloud-notifications@domain.com
   # repeat with additional mailboxes, e.g.:
-  # Add-DistributionGroupMember -Identity "DiscordForwarderAccessSec" -Member another-mailbox@joshuagreeff.cc
+  # Add-DistributionGroupMember -Identity "DiscordForwarderAccessSec" -Member another-mailbox@domain.com
   ```
 - (Optional) Validate policy:
   ```powershell
-  Test-ApplicationAccessPolicy -AppId <CLIENT_ID> -Identity hetzner-cloud-notifications@joshuagreeff.cc
+  Test-ApplicationAccessPolicy -AppId <CLIENT_ID> -Identity cloud-notifications@domain.com
   ```
 
 Bot setup per mailbox/channel:
 - Ensure `.env` has `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `PORT` (if changing the health port).
 - In Discord, run `/setup` with:
   - `channel`: target channel
-  - `mailbox_address`: e.g., `hetzner-cloud-notifications@joshuagreeff.cc`
+  - `mailbox_address`: e.g., `cloud-notifications@domain.com`
   - `tenant_id`: your tenant GUID
   - `client_id`: the app client ID
   - `client_secret`: the app secret
