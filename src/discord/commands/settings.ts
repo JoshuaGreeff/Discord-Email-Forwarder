@@ -50,7 +50,7 @@ export async function handleSettings(interaction: ChatInputCommandInteraction, d
 
   const lines: string[] = [];
   for (const setting of settings) {
-    const rules = listRules(db, setting.guildId, setting.channelId, setting.mailboxAddress);
+    const rules = await listRules(db, setting.guildId, setting.channelId, setting.mailboxAddress);
     const ackText = setting.ackExpiryDays === 0 ? "never (manual only)" : `${setting.ackExpiryDays ?? 5} day(s)`;
 
     lines.push(

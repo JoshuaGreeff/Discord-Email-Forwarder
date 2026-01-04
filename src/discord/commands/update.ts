@@ -7,7 +7,7 @@ import {
 } from "discord.js";
 import { Database } from "../../db/client";
 import { DEFAULT_ACK_EXPIRY_DAYS, listChannelSettings, normalizeAddress, upsertChannelSettings } from "../../db/settings";
-import { getResourceStore, getResourceById, upsertResource } from "../../db/resources";
+import { getResourceById, upsertResource } from "../../db/resources";
 import { verifyMailboxAccess } from "../../mail/verify";
 import { POLL_INTERVAL_MINUTES } from "../../config/poll";
 
@@ -76,8 +76,7 @@ export async function handleUpdate(interaction: ChatInputCommandInteraction, db:
     return;
   }
 
-  const resources = await getResourceStore();
-  const resource = getResourceById(resources, existing.resourceId);
+  const resource = await getResourceById(db, existing.resourceId);
   if (!resource) {
     await interaction.reply({
       content: "Mailbox credentials missing. Please re-run /setup for this mailbox.",
@@ -112,7 +111,7 @@ export async function handleUpdate(interaction: ChatInputCommandInteraction, db:
     return;
   }
 
-  await upsertResource(resources, {
+  await upsertResource(db, {
     ...resource,
     tenantId,
     clientId,

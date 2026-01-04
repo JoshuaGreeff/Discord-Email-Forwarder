@@ -1,4 +1,5 @@
-import { Database } from "./client";
+import { Kysely, Selectable } from "kysely";
+import { DB, RuleTable } from "./connection";
 import { normalizeAddress } from "./settings";
 
 export interface Rule {
@@ -20,100 +21,97 @@ export interface RuleInput {
   friendlyName?: string | null;
   fromAddress: string;
   subjectContains?: string | null;
-  createdAt?: number;
 }
 
-export async function upsertRule(db: Database, rule: RuleInput): Promise<number> {
+function mapRule(row: Selectable<RuleTable>): Rule {
+  return {
+    id: Number(row.id),
+    guildId: row.guild_id,
+    channelId: row.channel_id,
+    mailboxAddress: row.mailbox_address,
+    friendlyName: row.friendly_name ?? null,
+    fromAddress: row.from_address,
+    subjectContains: row.subject_contains ?? null,
+    createdAt: row.created_at,
+  };
+}
+
+export async function upsertRule(db: Kysely<DB>, rule: RuleInput): Promise<number> {
   const now = Math.floor(Date.now() / 1000);
   const normalizedMailbox = normalizeAddress(rule.mailboxAddress);
   const normalizedFrom = normalizeAddress(rule.fromAddress);
   const normalizedSubject = rule.subjectContains?.toLowerCase() ?? null;
   const friendlyName = rule.friendlyName ?? null;
 
-  const existingIndex = db.data.rules.findIndex(
-    (r) =>
-      r.guildId === rule.guildId &&
-      r.channelId === rule.channelId &&
-      normalizeAddress(r.mailboxAddress) === normalizedMailbox &&
-      normalizeAddress(r.fromAddress) === normalizedFrom &&
-      (r.subjectContains ?? null) === normalizedSubject
-  );
-
-  if (existingIndex >= 0) {
-    const existing = db.data.rules[existingIndex];
-    db.data.rules[existingIndex] = {
-      ...existing,
-      subjectContains: normalizedSubject,
-      createdAt: existing.createdAt ?? now,
-      friendlyName,
-    };
-    await db.save();
-    return existing.id;
+  if (rule.id) {
+    await db
+      .updateTable("rules")
+      .set({
+        friendly_name: friendlyName,
+        subject_contains: normalizedSubject,
+        from_address: normalizedFrom,
+        mailbox_address: normalizedMailbox,
+      })
+      .where("id", "=", rule.id)
+      .execute();
+    return rule.id;
   }
 
-  const maxId = db.data.rules.reduce((max, r) => Math.max(max, r.id ?? 0), 0);
-  const id = maxId + 1;
-  db.data.rules.push({
-    id,
-    guildId: rule.guildId,
-    channelId: rule.channelId,
-    mailboxAddress: normalizedMailbox,
-    friendlyName,
-    fromAddress: normalizedFrom,
-    subjectContains: normalizedSubject,
-    createdAt: now,
-  });
-  await db.save();
-  return id;
+  const inserted = await db
+    .insertInto("rules")
+    .values({
+      guild_id: rule.guildId,
+      channel_id: rule.channelId,
+      mailbox_address: normalizedMailbox,
+      friendly_name: friendlyName,
+      from_address: normalizedFrom,
+      subject_contains: normalizedSubject,
+      created_at: now,
+    })
+    .returning("id")
+    .executeTakeFirstOrThrow();
+
+  return Number(inserted.id);
 }
 
-export function listRules(
-  db: Database,
-  guildId: string,
-  channelId: string,
-  mailboxAddress: string
-): Rule[] {
+export async function listRules(db: Kysely<DB>, guildId: string, channelId: string, mailboxAddress: string): Promise<Rule[]> {
   const normalizedMailbox = normalizeAddress(mailboxAddress);
-  return db.data.rules
-    .filter(
-      (r) =>
-        r.guildId === guildId &&
-        r.channelId === channelId &&
-        normalizeAddress(r.mailboxAddress) === normalizedMailbox
-    )
-    .map((r) => ({ ...r }));
+  const rows = await db
+    .selectFrom("rules")
+    .selectAll()
+    .where("guild_id", "=", guildId)
+    .where("channel_id", "=", channelId)
+    .where("mailbox_address", "=", normalizedMailbox)
+    .orderBy("id")
+    .execute();
+  return rows.map(mapRule);
 }
 
-export async function deleteRule(
-  db: Database,
-  guildId: string,
-  channelId: string,
-  ruleId: number
-): Promise<boolean> {
-  const idx = db.data.rules.findIndex((r) => r.id === ruleId && r.guildId === guildId && r.channelId === channelId);
-  if (idx === -1) return false;
-  db.data.rules.splice(idx, 1);
-  await db.save();
-  return true;
+export async function deleteRule(db: Kysely<DB>, guildId: string, channelId: string, ruleId: number): Promise<boolean> {
+  const result = await db
+    .deleteFrom("rules")
+    .where("id", "=", ruleId)
+    .where("guild_id", "=", guildId)
+    .where("channel_id", "=", channelId)
+    .executeTakeFirst();
+
+  return (result.numDeletedRows ?? BigInt(0)) > BigInt(0);
 }
 
 export async function deleteRulesForMailbox(
-  db: Database,
+  db: Kysely<DB>,
   guildId: string,
   channelId: string,
   mailboxAddress: string
 ): Promise<number> {
   const normalizedMailbox = normalizeAddress(mailboxAddress);
-  const before = db.data.rules.length;
-  db.data.rules = db.data.rules.filter(
-    (r) =>
-      !(r.guildId === guildId && r.channelId === channelId && normalizeAddress(r.mailboxAddress) === normalizedMailbox)
-  );
-  const removed = before - db.data.rules.length;
-  if (removed > 0) {
-    await db.save();
-  }
-  return removed;
+  const result = await db
+    .deleteFrom("rules")
+    .where("guild_id", "=", guildId)
+    .where("channel_id", "=", channelId)
+    .where("mailbox_address", "=", normalizedMailbox)
+    .executeTakeFirst();
+  return Number(result.numDeletedRows ?? 0);
 }
 
 export function matchesRule(rule: Rule, email: { from?: string; subject?: string }): boolean {

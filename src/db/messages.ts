@@ -1,5 +1,7 @@
-import { Database } from "./client";
+import { Kysely } from "kysely";
+import { DB, MessageReceiptTable } from "./connection";
 import { DEFAULT_ACK_EXPIRY_DAYS, normalizeAddress } from "./settings";
+import { ChannelSettings } from "./settings";
 
 export interface MessageReceipt {
   messageId: string;
@@ -35,113 +37,166 @@ export interface MessageReceiptInput {
   acknowledgedName?: string | null;
 }
 
-export async function saveMessageReceipt(db: Database, receipt: MessageReceiptInput): Promise<void> {
-  const existingIndex = db.data.messageReceipts.findIndex((r) => r.messageId === receipt.messageId);
-  const now = Math.floor(Date.now() / 1000);
-  const record: MessageReceipt = {
-    ...receipt,
-    createdAt: receipt.createdAt ?? now,
-    fromAddress: receipt.fromAddress ?? null,
-    subject: receipt.subject ?? null,
-    receivedAt: receipt.receivedAt ?? null,
-    bodyPreview: receipt.bodyPreview ?? null,
-    bodyFull: receipt.bodyFull ?? null,
-    acknowledgedBy: receipt.acknowledgedBy ?? null,
-    acknowledgedAt: receipt.acknowledgedAt ?? null,
-    acknowledgedName: receipt.acknowledgedName ?? null,
+function mapReceipt(row: MessageReceiptTable): MessageReceipt {
+  return {
+    messageId: row.message_id,
+    guildId: row.guild_id,
+    channelId: row.channel_id,
+    mailboxAddress: row.mailbox_address,
+    emailId: row.email_id,
+    receivedAt: row.received_at ?? null,
+    bodyPreview: row.body_preview ?? null,
+    bodyFull: row.body_full ?? null,
+    createdAt: row.created_at,
+    fromAddress: row.from_address ?? null,
+    subject: row.subject ?? null,
+    acknowledgedBy: row.acknowledged_by ?? null,
+    acknowledgedAt: row.acknowledged_at ?? null,
+    acknowledgedName: row.acknowledged_name ?? null,
   };
+}
 
-  if (existingIndex >= 0) {
-    const existing = db.data.messageReceipts[existingIndex];
-    record.createdAt = existing.createdAt ?? record.createdAt;
-    db.data.messageReceipts[existingIndex] = record;
-  } else {
-    db.data.messageReceipts.push(record);
-  }
-
-  await db.save();
+export async function saveMessageReceipt(db: Kysely<DB>, receipt: MessageReceiptInput): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  const normalizedMailbox = normalizeAddress(receipt.mailboxAddress);
+  await db
+    .insertInto("message_receipts")
+    .values({
+      message_id: receipt.messageId,
+      guild_id: receipt.guildId,
+      channel_id: receipt.channelId,
+      mailbox_address: normalizedMailbox,
+      email_id: receipt.emailId,
+      received_at: receipt.receivedAt ?? null,
+      body_preview: receipt.bodyPreview ?? null,
+      body_full: receipt.bodyFull ?? null,
+      created_at: receipt.createdAt ?? now,
+      from_address: receipt.fromAddress ?? null,
+      subject: receipt.subject ?? null,
+      acknowledged_by: receipt.acknowledgedBy ?? null,
+      acknowledged_at: receipt.acknowledgedAt ?? null,
+      acknowledged_name: receipt.acknowledgedName ?? null,
+    })
+    .onConflict((oc) =>
+      oc.column("message_id").doUpdateSet({
+        received_at: receipt.receivedAt ?? null,
+        body_preview: receipt.bodyPreview ?? null,
+        body_full: receipt.bodyFull ?? null,
+        from_address: receipt.fromAddress ?? null,
+        subject: receipt.subject ?? null,
+        acknowledged_by: receipt.acknowledgedBy ?? null,
+        acknowledged_at: receipt.acknowledgedAt ?? null,
+        acknowledged_name: receipt.acknowledgedName ?? null,
+      })
+    )
+    .execute();
 }
 
 export async function markAcknowledged(
-  db: Database,
+  db: Kysely<DB>,
   messageId: string,
   userId: string,
   displayName?: string
 ): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
-  const receipt = db.data.messageReceipts.find((r) => r.messageId === messageId);
-  if (!receipt) return;
-
-  receipt.acknowledgedBy = userId;
-  receipt.acknowledgedAt = now;
-  receipt.acknowledgedName = displayName ?? null;
-
-  await db.save();
-  await pruneMessageReceipts(db);
+  await db
+    .updateTable("message_receipts")
+    .set({
+      acknowledged_by: userId,
+      acknowledged_at: now,
+      acknowledged_name: displayName ?? null,
+    })
+    .where("message_id", "=", messageId)
+    .execute();
 }
 
-export async function getReceipt(db: Database, messageId: string): Promise<MessageReceipt | null> {
-  const receipt = db.data.messageReceipts.find((r) => r.messageId === messageId);
-  return receipt ? { ...receipt } : null;
+export async function getReceipt(db: Kysely<DB>, messageId: string): Promise<MessageReceipt | null> {
+  const row = await db.selectFrom("message_receipts").selectAll().where("message_id", "=", messageId).executeTakeFirst();
+  return row ? mapReceipt(row) : null;
 }
 
-export function getReceiptByEmailId(
-  db: Database,
+export async function getReceiptByEmailId(
+  db: Kysely<DB>,
   emailId: string,
   channelId?: string,
   mailboxAddress?: string
-): MessageReceipt | null {
-  const receipt = db.data.messageReceipts.find(
-    (r) =>
-      r.emailId === emailId &&
-      (!channelId || r.channelId === channelId) &&
-      (!mailboxAddress || r.mailboxAddress === mailboxAddress)
-  );
-  return receipt ? { ...receipt } : null;
+): Promise<MessageReceipt | null> {
+  let query = db.selectFrom("message_receipts").selectAll().where("email_id", "=", emailId);
+  if (channelId) query = query.where("channel_id", "=", channelId);
+  if (mailboxAddress) query = query.where("mailbox_address", "=", normalizeAddress(mailboxAddress));
+  const row = await query.executeTakeFirst();
+  return row ? mapReceipt(row) : null;
 }
 
-function resolveAckExpiryDays(db: Database, receipt: MessageReceipt): number {
-  const normalizedMailbox = normalizeAddress(receipt.mailboxAddress);
-  const channel = db.data.channelSettings.find(
-    (setting) =>
-      setting.guildId === receipt.guildId &&
-      setting.channelId === receipt.channelId &&
-      normalizeAddress(setting.mailboxAddress) === normalizedMailbox
-  );
-
-  const days = channel?.ackExpiryDays ?? DEFAULT_ACK_EXPIRY_DAYS;
-  if (days === 0) return 0;
-  return days > 0 ? days : DEFAULT_ACK_EXPIRY_DAYS;
-}
-
-export async function pruneMessageReceipts(db: Database, now = Math.floor(Date.now() / 1000)): Promise<number> {
-  const before = db.data.messageReceipts.length;
+export async function pruneMessageReceipts(db: Kysely<DB>, channels: ChannelSettings[]): Promise<number> {
+  const now = Math.floor(Date.now() / 1000);
   const maxAgeSeconds = 30 * 86400;
 
-  for (const receipt of db.data.messageReceipts) {
-    if (!receipt.acknowledgedAt) {
-      const expiryDays = resolveAckExpiryDays(db, receipt);
-      if (expiryDays !== 0) {
-        const expirySeconds = expiryDays * 86400;
-        const createdAt = receipt.createdAt ?? now;
+  const receipts = await db.selectFrom("message_receipts").selectAll().execute();
+  const channelLookup = new Map<string, ChannelSettings>();
+  for (const c of channels) {
+    channelLookup.set(`${c.guildId}:${c.channelId}:${normalizeAddress(c.mailboxAddress)}`, c);
+  }
+
+  for (const receipt of receipts) {
+    if (!receipt.acknowledged_at) {
+      const key = `${receipt.guild_id}:${receipt.channel_id}:${normalizeAddress(receipt.mailbox_address)}`;
+      const channel = channelLookup.get(key);
+      const days = channel?.ackExpiryDays ?? DEFAULT_ACK_EXPIRY_DAYS;
+      if (days !== 0) {
+        const expirySeconds = days * 86400;
+        const createdAt = receipt.created_at ?? now;
         if (createdAt + expirySeconds <= now) {
-          receipt.acknowledgedAt = now;
-          receipt.acknowledgedBy = "auto";
-          receipt.acknowledgedName = "Auto-acknowledged";
+          await db
+            .updateTable("message_receipts")
+            .set({
+              acknowledged_at: now,
+              acknowledged_by: "auto",
+              acknowledged_name: "Auto-acknowledged",
+            })
+            .where("message_id", "=", receipt.message_id)
+            .execute();
         }
       }
     }
   }
 
-  db.data.messageReceipts = db.data.messageReceipts.filter((receipt) => {
-    const createdAt = receipt.createdAt ?? now;
-    return createdAt + maxAgeSeconds > now;
-  });
+  const result = await db
+    .deleteFrom("message_receipts")
+    .where("created_at", "<", now - maxAgeSeconds)
+    .executeTakeFirst();
 
-  const removed = before - db.data.messageReceipts.length;
-  if (removed > 0) {
-    await db.save();
+  return Number(result.numDeletedRows ?? 0);
+}
+
+export async function listMessageReceipts(
+  db: Kysely<DB>,
+  filters: {
+    guildId: string;
+    channelId?: string;
+    mailboxAddress?: string;
+    acknowledgerId?: string;
+    sender?: string;
+    contentContains?: string;
+    titleContains?: string;
+    since?: number;
   }
+): Promise<MessageReceipt[]> {
+  let query = db.selectFrom("message_receipts").selectAll().where("guild_id", "=", filters.guildId);
+  if (filters.channelId) query = query.where("channel_id", "=", filters.channelId);
+  if (filters.mailboxAddress) query = query.where("mailbox_address", "=", normalizeAddress(filters.mailboxAddress));
+  if (filters.acknowledgerId) query = query.where("acknowledged_by", "=", filters.acknowledgerId);
+  if (filters.since) query = query.where("created_at", ">=", filters.since);
 
-  return removed;
+  const rows = await query.execute();
+  const lowerContent = filters.contentContains?.toLowerCase();
+  const lowerTitle = filters.titleContains?.toLowerCase();
+  const lowerSender = filters.sender?.toLowerCase();
+
+  return rows
+    .map(mapReceipt)
+    .filter((r) => (lowerSender ? (r.fromAddress ?? "").toLowerCase().includes(lowerSender) : true))
+    .filter((r) => (lowerContent ? (r.bodyPreview ?? "").toLowerCase().includes(lowerContent) : true))
+    .filter((r) => (lowerTitle ? (r.subject ?? "").toLowerCase().includes(lowerTitle) : true))
+    .sort((a, b) => (b.acknowledgedAt ?? b.createdAt ?? 0) - (a.acknowledgedAt ?? a.createdAt ?? 0));
 }

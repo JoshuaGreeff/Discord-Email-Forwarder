@@ -1,0 +1,53 @@
+services:
+  ackbot_db:
+    container_name: ackbot_db
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-ackbot}
+      POSTGRES_DB: ${DB_NAME:-ackbot}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ackbot_db_data:/var/lib/postgresql/data
+    networks:
+      - ackbot_internal
+
+  ackbot:
+    container_name: ackbot
+    build: .
+    image: ackbot:latest
+    restart: unless-stopped
+    environment:
+      # Discord credentials come from secret env
+      # DISCORD_TOKEN: ${DISCORD_TOKEN}
+      # DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
+      # DISCORD_PUBLIC_KEY: ${DISCORD_PUBLIC_KEY}
+      PORT: ${PORT:-3000}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-ackbot}
+      DB_NAME: ${DB_NAME:-ackbot}
+      DB_PASSWORD: ${DB_PASSWORD}
+      # DEV_LOGGING: "1"
+    depends_on:
+      - ackbot_db
+    networks:
+      - ackbot_internal
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/health').then(r=>{if(!r.ok) process.exit(1);}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  ackbot_db_data:
+
+networks:
+  ackbot_internal:
+    internal: true

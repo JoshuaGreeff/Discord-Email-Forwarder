@@ -51,7 +51,7 @@ export async function handleRemoveRule(interaction: ChatInputCommandInteraction,
     return;
   }
 
-  const rules = listRules(db, interaction.guildId, setting.channelId, mailboxAddress);
+  const rules = await listRules(db, interaction.guildId, setting.channelId, mailboxAddress);
 
   if (!rules.length) {
     await interaction.reply({

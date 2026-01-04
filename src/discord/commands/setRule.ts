@@ -113,7 +113,7 @@ export async function handleSetRuleModal(interaction: any, db: Database): Promis
     friendlyName,
   });
 
-  const rules = listRules(db, interaction.guildId, channelId, mailboxAddress);
+  const rules = await listRules(db, interaction.guildId, channelId, mailboxAddress);
   const summary = rules
     .map(
       (r) =>

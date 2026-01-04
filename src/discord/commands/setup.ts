@@ -6,8 +6,8 @@ import {
   SlashCommandBuilder,
 } from "discord.js";
 import { Database } from "../../db/client";
-import { DEFAULT_ACK_EXPIRY_DAYS, upsertChannelSettings } from "../../db/settings";
-import { findResourceByMailbox, getResourceStore, upsertResource } from "../../db/resources";
+import { DEFAULT_ACK_EXPIRY_DAYS, listChannelSettings, upsertChannelSettings } from "../../db/settings";
+import { findResourceByMailbox, upsertResource } from "../../db/resources";
 import { verifyMailboxAccess } from "../../mail/verify";
 import { EmbedBuilder } from "discord.js";
 import { POLL_INTERVAL_MINUTES } from "../../config/poll";
@@ -97,12 +97,10 @@ export async function handleSetup(interaction: ChatInputCommandInteraction, db: 
   const ackExpiryDays = interaction.options.getInteger("ack_expiry_days") ?? undefined;
   const checkJunk = interaction.options.getBoolean("check_junk") ?? false;
 
-  const resources = await getResourceStore();
-  const existingResource = findResourceByMailbox(resources, mailboxAddress);
+  const existingResource = await findResourceByMailbox(db, mailboxAddress);
   if (existingResource) {
-    const inUse = db.data.channelSettings.find(
-      (setting) => setting.resourceId === existingResource.id && setting.channelId !== channel.id
-    );
+    const settings = await listChannelSettings(db);
+    const inUse = settings.find((setting) => setting.resourceId === existingResource.id && setting.channelId !== channel.id);
     if (inUse) {
       await interaction.reply({
         content: "This mailbox is already configured for another channel. Please remove it there first.",
@@ -127,7 +125,7 @@ export async function handleSetup(interaction: ChatInputCommandInteraction, db: 
     return;
   }
 
-  const resource = await upsertResource(resources, {
+  const resource = await upsertResource(db, {
     id: existingResource?.id ?? mailboxAddress.toLowerCase(),
     mailboxAddress,
     tenantId,
@@ -135,7 +133,6 @@ export async function handleSetup(interaction: ChatInputCommandInteraction, db: 
     clientSecret,
     accessToken: verifyResult.tokens?.accessToken ?? null,
     expiresAt: verifyResult.tokens?.expiresAt ?? null,
-    createdAt: existingResource?.createdAt,
   });
 
   await upsertChannelSettings(db, {

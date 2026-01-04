@@ -1,5 +1,5 @@
-import fs from "fs";
-import path from "path";
+import { Kysely } from "kysely";
+import { DB, ResourceTable } from "./connection";
 import { normalizeAddress } from "./settings";
 
 export interface MailboxResource {
@@ -22,110 +22,69 @@ export interface MailboxResourceInput {
   clientSecret: string;
   accessToken?: string | null;
   expiresAt?: number | null;
-  createdAt?: number;
-  updatedAt?: number;
 }
 
-type ResourceData = {
-  mailboxes: MailboxResource[];
-};
-
-export interface ResourceStore {
-  data: ResourceData;
-  save(): Promise<void>;
-}
-
-const DATA_FILE = path.join(process.cwd(), "data", "resources.json");
-let resourceInstance: ResourceStore | null = null;
-
-function normalizeMailboxResource(record: MailboxResourceInput): MailboxResource {
-  const now = Math.floor(Date.now() / 1000);
+function mapResource(row: ResourceTable): MailboxResource {
   return {
-    id: record.id ?? normalizeAddress(record.mailboxAddress),
-    mailboxAddress: normalizeAddress(record.mailboxAddress),
-    tenantId: record.tenantId,
-    clientId: record.clientId,
-    clientSecret: record.clientSecret,
-    accessToken: record.accessToken ?? null,
-    expiresAt: record.expiresAt ?? null,
-    createdAt: record.createdAt ?? now,
-    updatedAt: record.updatedAt ?? now,
+    id: row.id,
+    mailboxAddress: row.mailbox_address,
+    tenantId: row.tenant_id,
+    clientId: row.client_id,
+    clientSecret: row.client_secret,
+    accessToken: row.access_token ?? null,
+    expiresAt: row.expires_at ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
-async function readData(): Promise<ResourceData> {
-  if (!fs.existsSync(DATA_FILE)) {
-    return { mailboxes: [] };
-  }
-
-  const raw = await fs.promises.readFile(DATA_FILE, "utf8");
-  try {
-    const parsed = JSON.parse(raw);
-    return {
-      mailboxes: Array.isArray(parsed.mailboxes)
-        ? parsed.mailboxes.map((r: MailboxResource) => normalizeMailboxResource(r))
-        : [],
-    };
-  } catch {
-    return { mailboxes: [] };
-  }
-}
-
-async function writeData(data: ResourceData): Promise<void> {
-  const dir = path.dirname(DATA_FILE);
-  await fs.promises.mkdir(dir, { recursive: true });
-  const tempPath = `${DATA_FILE}.tmp`;
-  await fs.promises.writeFile(tempPath, JSON.stringify(data, null, 2), "utf8");
-  await fs.promises.rm(DATA_FILE, { force: true });
-  await fs.promises.rename(tempPath, DATA_FILE);
-}
-
-export async function getResourceStore(): Promise<ResourceStore> {
-  if (resourceInstance) return resourceInstance;
-
-  const data = await readData();
-  resourceInstance = {
-    data,
-    async save() {
-      await writeData(data);
-    },
-  };
-
-  return resourceInstance;
-}
-
-export function findResourceByMailbox(store: ResourceStore, mailboxAddress: string): MailboxResource | null {
-  const target = normalizeAddress(mailboxAddress);
-  const found = store.data.mailboxes.find((r) => normalizeAddress(r.mailboxAddress) === target);
-  return found ? { ...found } : null;
-}
-
-export function getResourceById(store: ResourceStore, id: string): MailboxResource | null {
-  const found = store.data.mailboxes.find((r) => r.id === id);
-  return found ? { ...found } : null;
-}
-
-export async function upsertResource(store: ResourceStore, resource: MailboxResourceInput): Promise<MailboxResource> {
-  const normalized = normalizeMailboxResource(resource);
-  const existingIndex = store.data.mailboxes.findIndex((r) => r.id === normalized.id);
+export async function upsertResource(db: Kysely<DB>, resource: MailboxResourceInput): Promise<MailboxResource> {
   const now = Math.floor(Date.now() / 1000);
+  const normalized = normalizeAddress(resource.mailboxAddress);
+  const id = resource.id ?? normalized;
 
-  if (existingIndex >= 0) {
-    const existing = store.data.mailboxes[existingIndex];
-    store.data.mailboxes[existingIndex] = {
-      ...existing,
-      ...normalized,
-      createdAt: existing.createdAt ?? now,
-      updatedAt: now,
-    };
-  } else {
-    store.data.mailboxes.push({
-      ...normalized,
-      createdAt: normalized.createdAt ?? now,
-      updatedAt: now,
-    });
-  }
+  await db
+    .insertInto("resources")
+    .values({
+      id,
+      mailbox_address: normalized,
+      tenant_id: resource.tenantId,
+      client_id: resource.clientId,
+      client_secret: resource.clientSecret,
+      access_token: resource.accessToken ?? null,
+      expires_at: resource.expiresAt ?? null,
+      created_at: now,
+      updated_at: now,
+    })
+    .onConflict((oc) =>
+      oc.column("id").doUpdateSet({
+        mailbox_address: normalized,
+        tenant_id: resource.tenantId,
+        client_id: resource.clientId,
+        client_secret: resource.clientSecret,
+        access_token: resource.accessToken ?? null,
+        expires_at: resource.expiresAt ?? null,
+        updated_at: now,
+      })
+    )
+    .execute();
 
-  await store.save();
-  return normalized;
+  const row = await getResourceById(db, id);
+  if (!row) throw new Error("Failed to upsert resource");
+  return row;
+}
+
+export async function getResourceById(db: Kysely<DB>, id: string): Promise<MailboxResource | null> {
+  const row = await db.selectFrom("resources").selectAll().where("id", "=", id).executeTakeFirst();
+  return row ? mapResource(row) : null;
+}
+
+export async function findResourceByMailbox(db: Kysely<DB>, mailboxAddress: string): Promise<MailboxResource | null> {
+  const normalized = normalizeAddress(mailboxAddress);
+  const row = await db
+    .selectFrom("resources")
+    .selectAll()
+    .where("mailbox_address", "=", normalized)
+    .executeTakeFirst();
+  return row ? mapResource(row) : null;
 }

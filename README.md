@@ -1,11 +1,11 @@
 # Discord Email Forwarder
 
-A Discord bot that reads emails from a Microsoft 365 shared mailbox (Azure app-only) and forwards them to Discord channels with acknowledgements.
+A Discord bot that reads emails from a Microsoft 365 shared mailbox (Azure app-only) and forwards them to Discord channels with acknowledgements. Data is stored in PostgreSQL.
 
 ## Features
 - `/setup` to configure a channel + mailbox + Azure app creds; app-only auth means no user OAuth links.
 - `/update` to adjust settings with masked secrets; tokens refresh automatically (select the channel and mailbox to update).
-- Polls each configured mailbox (application Graph access) and posts each unread email (subject + body) to the target channel. Poll runs immediately on boot, then every 5 minutes.
+- Polls each configured mailbox (application Graph access) and posts each unread email (subject + body) to the target channel. Poll runs immediately on boot, then every 5 minutes (fixed interval).
 - Button on each posted email:
   - **Acknowledge**: greys out after click, records the user in the embed footer, and clears the body/fields to save space.
 - Per-channel settings now support multiple mailboxes per channel; each mailbox is tracked independently.
@@ -17,8 +17,9 @@ A Discord bot that reads emails from a Microsoft 365 shared mailbox (Azure app-o
 1) Create an Azure app with **application** Graph permissions (Mail.Read or Mail.ReadBasic.All) and grant admin consent. Give the app access to the mailbox via an application access policy or full access on the shared mailbox. Create a client secret.
 2) Copy `.env.example` to `.env` and set:
    - `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `PORT` (health endpoint; defaults to 3000).
+   - Postgres connection via `DATABASE_URL` **or** `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`.
 3) `npm install`
-4) Start the bot: `npm run dev` (enables dev logging via `DEV_LOGGING=1`) or `npm run build && npm start` for prod.
+4) Start the bot: `npm run dev` (enables dev logging via `DEV_LOGGING=1`) or `npm run build && npm start` for prod. Tables are created automatically on boot.
 5) Run `/setup` in your server (Manage Server required):
    - Provide channel, mailbox address (e.g., `admin-intake@yourcompany.com`), optional mailbox alias (shown in Discord), tenant ID, client ID, client secret, optional `ack_expiry_days` (default 5).
    - The bot will fetch app-only tokens automatically once saved. Polling is fixed at every 5 minutes (top 10 unread per mailbox).
@@ -26,10 +27,14 @@ A Discord bot that reads emails from a Microsoft 365 shared mailbox (Azure app-o
    - A mailbox already bound to another channel will be rejected to prevent duplicate delivery.
 
 ## Notes
-- Polling is every 5 minutes (cron `*/5 * * * *`, fetches top 10 unread). This schedule is fixed.
+- Polling is every 5 minutes (fixed interval, fetches top 10 unread). This schedule is fixed.
 - After acknowledgement, the message body and fields are cleared; the embed footer shows who acknowledged it.
-- Receipts are removed from the JSON DB once acknowledged or when the per-channel expiry window elapses.
-- Data is stored in `data/db.json` (plain JSON file); secrets are stored as provided—use OS-level protections.
+- Receipts are removed from the database once acknowledged or when the per-channel expiry window elapses.
+- Data is stored in PostgreSQL; provide connection via `DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME`.
+
+## Docker / Portainer
+- A `Dockerfile` and `docker-compose.yml` are provided. The compose file runs Postgres in a sibling container on an internal-only Docker network (no published ports) and the bot connects via that network.
+- Database credentials are expected from Portainer secrets or stack environment variables; see `docker-compose.yml` for the `db_password` secret placeholder.
 
 ## Adding shared mailboxes (joshuagreeff.cc)
 Use one app registration (application permissions) and one mail-enabled security group to scope mailbox access. Add each shared mailbox you want to forward into that group, then run `/setup` per Discord channel.

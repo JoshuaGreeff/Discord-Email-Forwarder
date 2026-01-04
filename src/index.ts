@@ -2,14 +2,13 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
-import { getDb } from "./db/client";
-import { getResourceStore } from "./db/resources";
+import { getDb, ensureSchema } from "./db/client";
 import { createClient } from "./discord/bot";
 import { startPolling } from "./emailPoller";
 
 async function bootstrap() {
-  const db = await getDb();
-  const resources = await getResourceStore();
+  const db = getDb();
+  await ensureSchema(db);
 
   const client = createClient(db);
   const token = process.env.DISCORD_TOKEN;
@@ -27,7 +26,7 @@ async function bootstrap() {
   });
 
   await client.login(token);
-  startPolling(db, resources, client);
+  startPolling(db, client);
 }
 
 bootstrap().catch((err) => {

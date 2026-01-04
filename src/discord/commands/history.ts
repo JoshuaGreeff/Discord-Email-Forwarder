@@ -10,7 +10,7 @@ import {
   SlashCommandBuilder,
 } from "discord.js";
 import { Database } from "../../db/client";
-import { MessageReceipt } from "../../db/messages";
+import { MessageReceipt, listMessageReceipts } from "../../db/messages";
 
 export const data = new SlashCommandBuilder()
   .setName("history")
@@ -105,16 +105,16 @@ export async function handleHistory(interaction: ChatInputCommandInteraction, db
   const now = Math.floor(Date.now() / 1000);
   const thirtyDaysAgo = now - 30 * 86400;
 
-  const matches = db.data.messageReceipts
-    .filter((r) => r.guildId === interaction.guildId)
-    .filter((r) => (channelFilter ? r.channelId === channelFilter.id : true))
-    .filter((r) => (mailboxFilter ? r.mailboxAddress.toLowerCase() === mailboxFilter : true))
-    .filter((r) => (acknowledgerFilter ? r.acknowledgedBy === acknowledgerFilter.id : true))
-    .filter((r) => (senderFilter ? (r.fromAddress ?? "").toLowerCase().includes(senderFilter) : true))
-    .filter((r) => (contentFilter ? (r.bodyPreview ?? "").toLowerCase().includes(contentFilter) : true))
-    .filter((r) => (titleFilter ? (r.subject ?? "").toLowerCase().includes(titleFilter) : true))
-    .filter((r) => (r.createdAt ?? now) >= thirtyDaysAgo)
-    .sort((a, b) => (b.acknowledgedAt ?? b.createdAt ?? 0) - (a.acknowledgedAt ?? a.createdAt ?? 0));
+  const matches = await listMessageReceipts(db, {
+    guildId: interaction.guildId,
+    channelId: channelFilter?.id,
+    mailboxAddress: mailboxFilter ?? undefined,
+    acknowledgerId: acknowledgerFilter?.id,
+    sender: senderFilter ?? undefined,
+    contentContains: contentFilter ?? undefined,
+    titleContains: titleFilter ?? undefined,
+    since: thirtyDaysAgo,
+  });
 
   const pageSize = 5;
   let page = 0;
