@@ -49,4 +49,3 @@ volumes:
 
 networks:
   ackbot_internal:
-    internal: true
