@@ -23,7 +23,7 @@ services:
       # DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
       # DISCORD_PUBLIC_KEY: ${DISCORD_PUBLIC_KEY}
       PORT: ${PORT:-3000}
-      DB_HOST: db
+      DB_HOST: ackbot_db
       DB_PORT: 5432
       DB_USER: ${DB_USER:-ackbot}
       DB_NAME: ${DB_NAME:-ackbot}
