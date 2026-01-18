@@ -59,7 +59,7 @@ export async function handleUpdate(interaction: ChatInputCommandInteraction, db:
     (member.permissions as PermissionsBitField).has(PermissionsBitField.Flags.ManageGuild);
 
   if (!hasAdmin) {
-    await interaction.reply({ content: "You need the Manage Server permission to run /update.", flags: MessageFlags.Ephemeral });
+    await interaction.reply({ content: "You need the Manage Server permission to run /ack email update.", flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -70,7 +70,7 @@ export async function handleUpdate(interaction: ChatInputCommandInteraction, db:
   );
   if (!existing) {
     await interaction.reply({
-      content: "No settings found for that mailbox. Run /setup first.",
+      content: "No settings found for that mailbox. Run /ack email setup first.",
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -79,7 +79,7 @@ export async function handleUpdate(interaction: ChatInputCommandInteraction, db:
   const resource = await getResourceById(db, existing.resourceId);
   if (!resource) {
     await interaction.reply({
-      content: "Mailbox credentials missing. Please re-run /setup for this mailbox.",
+      content: "Mailbox credentials missing. Please re-run /ack email setup for this mailbox.",
       flags: MessageFlags.Ephemeral,
     });
     return;

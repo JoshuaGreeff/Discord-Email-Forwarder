@@ -76,7 +76,7 @@ export async function handleSetup(interaction: ChatInputCommandInteraction, db: 
     (member.permissions as PermissionsBitField).has(PermissionsBitField.Flags.ManageGuild);
 
   if (!hasAdmin) {
-    await interaction.reply({ content: "You need the Manage Server permission to run /setup.", flags: MessageFlags.Ephemeral });
+    await interaction.reply({ content: "You need the Manage Server permission to run /ack email setup.", flags: MessageFlags.Ephemeral });
     return;
   }
 

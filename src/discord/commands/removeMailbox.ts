@@ -30,7 +30,7 @@ export async function handleRemoveMailbox(interaction: ChatInputCommandInteracti
 
   if (!hasAdmin) {
     await interaction.reply({
-      content: "You need the Manage Server permission to run /remove-mailbox.",
+      content: "You need the Manage Server permission to run /ack email delete.",
       flags: MessageFlags.Ephemeral,
     });
     return;

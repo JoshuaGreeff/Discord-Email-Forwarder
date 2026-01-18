@@ -33,7 +33,7 @@ export async function handleSetRule(interaction: ChatInputCommandInteraction, db
     (member.permissions as PermissionsBitField).has(PermissionsBitField.Flags.ManageGuild);
 
   if (!hasAdmin) {
-    await interaction.reply({ content: "You need the Manage Server permission to run /set-rule.", flags: MessageFlags.Ephemeral });
+    await interaction.reply({ content: "You need the Manage Server permission to run /ack rule create.", flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -45,7 +45,7 @@ export async function handleSetRule(interaction: ChatInputCommandInteraction, db
 
   if (!setting) {
     await interaction.reply({
-      content: "Mailbox not found in this server. Configure it with /setup first.",
+      content: "Mailbox not found in this server. Configure it with /ack email setup first.",
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -94,7 +94,7 @@ export async function handleSetRuleModal(interaction: any, db: Database): Promis
 
   if (!setting) {
     await interaction.reply({
-      content: "Mailbox not found in this server. Configure it with /setup first.",
+      content: "Mailbox not found in this server. Configure it with /ack email setup first.",
       flags: MessageFlags.Ephemeral,
     });
     return;

@@ -33,7 +33,7 @@ export async function handleRemoveRule(interaction: ChatInputCommandInteraction,
     (member.permissions as PermissionsBitField).has(PermissionsBitField.Flags.ManageGuild);
 
   if (!hasAdmin) {
-    await interaction.reply({ content: "You need the Manage Server permission to run /remove-rule.", flags: MessageFlags.Ephemeral });
+    await interaction.reply({ content: "You need the Manage Server permission to run /ack rule remove.", flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -45,7 +45,7 @@ export async function handleRemoveRule(interaction: ChatInputCommandInteraction,
 
   if (!setting) {
     await interaction.reply({
-      content: "Mailbox not found in this server. Configure it with /setup first.",
+      content: "Mailbox not found in this server. Configure it with /ack email setup first.",
       flags: MessageFlags.Ephemeral,
     });
     return;

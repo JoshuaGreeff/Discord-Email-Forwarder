@@ -3,15 +3,15 @@
 A Discord bot that reads emails from a Microsoft 365 shared mailbox (Azure app-only) and forwards them to Discord channels with acknowledgements. Data is stored in PostgreSQL.
 
 ## Features
-- `/setup` to configure a channel + mailbox + Azure app creds; app-only auth means no user OAuth links.
-- `/update` to adjust settings with masked secrets; tokens refresh automatically (select the channel and mailbox to update).
+- `/ack email setup` to configure a channel + mailbox + Azure app creds; app-only auth means no user OAuth links.
+- `/ack email update` to adjust settings with masked secrets; tokens refresh automatically (select the channel and mailbox to update).
 - Polls each configured mailbox (application Graph access) and posts each unread email (subject + body) to the target channel. Poll runs immediately on boot, then every 5 minutes (fixed interval).
 - Button on each posted email:
   - **Acknowledge**: greys out after click, records the user in the embed footer, and clears the body/fields to save space.
 - Per-channel settings now support multiple mailboxes per channel; each mailbox is tracked independently.
 - Receipts auto-prune after acknowledgement or when the per-channel expiry window elapses (default 5 days, configurable).
 - Each mailbox (credentials) is treated as a single resource and can only be bound to one channel; reuse is blocked to avoid split delivery.
-- Mailbox credentials are verified on setup/update before saving.
+- Mailbox credentials are verified on `/ack email setup` and `/ack email update` before saving.
 
 ## Quick start
 1) Create an Azure app with **application** Graph permissions (Mail.Read or Mail.ReadBasic.All) and grant admin consent. Give the app access to the mailbox via an application access policy or full access on the shared mailbox. Create a client secret.
@@ -20,10 +20,10 @@ A Discord bot that reads emails from a Microsoft 365 shared mailbox (Azure app-o
    - Postgres connection via `DATABASE_URL` **or** `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`.
 3) `npm install`
 4) Start the bot: `npm run dev` (enables dev logging via `DEV_LOGGING=1`) or `npm run build && npm start` for prod. Tables are created automatically on boot.
-5) Run `/setup` in your server (Manage Server required):
+5) Run `/ack email setup` in your server (Manage Server required):
    - Provide channel, mailbox address (e.g., `admin-intake@yourcompany.com`), optional mailbox alias (shown in Discord), tenant ID, client ID, client secret, optional `ack_expiry_days` (default 5).
    - The bot will fetch app-only tokens automatically once saved. Polling is fixed at every 5 minutes (top 10 unread per mailbox).
-   - You can add multiple mailboxes to the same channel by running `/setup` again with a different mailbox address.
+   - You can add multiple mailboxes to the same channel by running `/ack email setup` again with a different mailbox address.
    - A mailbox already bound to another channel will be rejected to prevent duplicate delivery.
 
 ## Notes
@@ -37,7 +37,7 @@ A Discord bot that reads emails from a Microsoft 365 shared mailbox (Azure app-o
 - Database credentials are expected from Portainer secrets or stack environment variables; see `docker-compose.yml` for the `db_password` secret placeholder.
 
 ## Adding shared mailboxes
-Use one app registration (application permissions) and one mail-enabled security group to scope mailbox access. Add each shared mailbox you want to forward into that group, then run `/setup` per Discord channel.
+Use one app registration (application permissions) and one mail-enabled security group to scope mailbox access. Add each shared mailbox you want to forward into that group, then run `/ack email setup` per Discord channel.
 
 Azure/Exchange (once):
 - App registration: create the app, note Tenant ID and Client ID, create a client secret. Grant Microsoft Graph Application permission `Mail.Read` (or `Mail.ReadBasic.All`) and admin consent.
@@ -69,7 +69,7 @@ Add a mailbox (repeat for each):
 
 Bot setup per mailbox/channel:
 - Ensure `.env` has `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `PORT` (if changing the health port).
-- In Discord, run `/setup` with:
+- In Discord, run `/ack email setup` with:
   - `channel`: target channel
   - `mailbox_address`: e.g., `cloud-notifications@domain.com`
   - `tenant_id`: your tenant GUID
