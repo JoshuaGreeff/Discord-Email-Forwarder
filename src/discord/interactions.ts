@@ -117,10 +117,38 @@ export async function handleShowMore(interaction: ButtonInteraction, db: Databas
     return;
   }
 
-  const body = receipt.bodyFull.length > 3900 ? `${receipt.bodyFull.slice(0, 3900)}…` : receipt.bodyFull;
+  const chunks = splitDiscordContent(receipt.bodyFull, 2000);
+  const first = chunks.shift() ?? "No additional content available for this message.";
 
   await interaction.reply({
-    content: body,
+    content: first,
     flags: MessageFlags.Ephemeral,
   });
+
+  for (const chunk of chunks) {
+    await interaction.followUp({
+      content: chunk,
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+}
+
+function splitDiscordContent(text: string, limit: number): string[] {
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > limit) {
+    const slice = remaining.slice(0, limit + 1);
+    let cut = slice.lastIndexOf("\n");
+    if (cut < 0) cut = slice.lastIndexOf(" ");
+    if (cut < 0) cut = limit;
+    chunks.push(remaining.slice(0, cut).trimEnd());
+    remaining = remaining.slice(cut).trimStart();
+  }
+
+  if (remaining.length) {
+    chunks.push(remaining);
+  }
+
+  return chunks;
 }
